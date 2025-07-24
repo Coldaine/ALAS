@@ -10,26 +10,46 @@ from module.logger import logger
 OCR_BACKEND = None
 OCR_NAME = "none"
 
-# Try EasyOCR first (best for game text)
+# Try PaddleOCR first (recommended for performance and accuracy)
 try:
-    import easyocr
-    _reader = None
-    
-    def get_easyocr_reader():
-        global _reader
-        if _reader is None:
-            logger.info("Initializing EasyOCR (first time may download models)...")
-            _reader = easyocr.Reader(['en', 'ja', 'ch_sim', 'ch_tra'], gpu=False)
-            logger.info("EasyOCR initialized successfully")
-        return _reader
-    
-    OCR_BACKEND = "easyocr"
-    OCR_NAME = "EasyOCR"
-    logger.info("OCR backend: EasyOCR available")
-except ImportError:
+    from paddleocr import PaddleOCR
+    _paddle_reader = None
+
+    def get_paddleocr_reader():
+        global _paddle_reader
+        if _paddle_reader is None:
+            logger.info("Initializing PaddleOCR (first time may download models)...")
+            _paddle_reader = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
+            logger.info("PaddleOCR initialized successfully")
+        return _paddle_reader
+
+    OCR_BACKEND = "paddleocr"
+    OCR_NAME = "PaddleOCR"
+    logger.info("OCR backend: PaddleOCR available")
+except (ImportError, RuntimeError):
     pass
 
-# Try Tesseract second
+# Try EasyOCR second
+if OCR_BACKEND is None:
+    try:
+        import easyocr
+        _reader = None
+
+        def get_easyocr_reader():
+            global _reader
+            if _reader is None:
+                logger.info("Initializing EasyOCR (first time may download models)...")
+                _reader = easyocr.Reader(['en', 'ja', 'ch_sim', 'ch_tra'], gpu=False)
+                logger.info("EasyOCR initialized successfully")
+            return _reader
+
+        OCR_BACKEND = "easyocr"
+        OCR_NAME = "EasyOCR"
+        logger.info("OCR backend: EasyOCR available")
+    except ImportError:
+        pass
+
+# Try Tesseract third
 if OCR_BACKEND is None:
     try:
         from module.ocr.tesseract_backend import TesseractBackend
@@ -110,8 +130,20 @@ class AlOcr:
             return ""
         if image.size == 0:
             return ""
-            
-        if self.backend == "easyocr":
+
+        if self.backend == "paddleocr":
+            try:
+                reader = get_paddleocr_reader()
+                result = reader.ocr(image, cls=True)
+                if result and result[0] is not None:
+                    # Extract text from PaddleOCR result
+                    txts = [line[1][0] for line in result[0]]
+                    return " ".join(txts)
+                return ""
+            except Exception as e:
+                logger.warning(f"PaddleOCR failed: {e}")
+                return ""
+        elif self.backend == "easyocr":
             try:
                 reader = get_easyocr_reader()
                 if isinstance(image, np.ndarray):
@@ -137,7 +169,7 @@ class AlOcr:
         Atomic OCR matching original interface.
         Returns list of character lists.
         """
-        if self.backend == "easyocr":
+        if self.backend in ["easyocr", "paddleocr"]:
             results = self.ocr_for_single_lines(images)
             return [list(text) for text in results]
         else:
@@ -146,12 +178,12 @@ class AlOcr:
     def set_cand_alphabet(self, alphabet: Optional[str]):
         """Set character whitelist"""
         self.cand_alphabet = alphabet
-        if self.backend != "easyocr":
+        if self.backend not in ["easyocr", "paddleocr"]:
             self._impl.set_cand_alphabet(alphabet)
     
     def atomic_ocr(self, image: np.ndarray, alphabet: Optional[str] = None) -> str:
         """Atomic OCR with temporary alphabet"""
-        if alphabet and self.backend != "easyocr":
+        if alphabet and self.backend not in ["easyocr", "paddleocr"]:
             return self._impl.atomic_ocr(image, alphabet)
         return self.ocr(image)
     
@@ -162,7 +194,7 @@ class AlOcr:
     def debug(self, images: List[np.ndarray]):
         """Debug OCR by printing results for each image"""
         logger.info(f"Debug: Processing {len(images)} images with {OCR_NAME}")
-        if self.backend == "easyocr":
+        if self.backend in ["easyocr", "paddleocr"]:
             for i, img in enumerate(images):
                 result = self.ocr(img)
                 logger.info(f"Image {i}: '{result}'")

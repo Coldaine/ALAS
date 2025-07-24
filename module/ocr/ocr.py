@@ -78,10 +78,45 @@ class Ocr:
             direct_ocr (bool): True to skip preprocess.
 
         Returns:
-            str: Empty string as OCR functionality has been removed
+            str, list[str]:
         """
-        logger.warning("OCR functionality has been removed. Returning empty result.")
-        return ""  # Return empty string instead of raising error to avoid breaking existing code
+        if image is None:
+            return '' if not isinstance(self._buttons, list) or len(self._buttons) <= 1 else []
+
+        image_list = image if isinstance(image, list) else [image]
+        if not image_list:
+            return []
+
+        result_list = []
+        try:
+            # Pre-process
+            if not direct_ocr:
+                image_list = [self.pre_process(img) for img in image_list]
+
+            # OCR
+            if self.alphabet:
+                raw_results = OCR_MODEL.atomic_ocr_for_single_lines(image_list, alphabet=self.alphabet)
+                result_list = ["".join(res) for res in raw_results]
+            else:
+                result_list = OCR_MODEL.ocr_for_single_lines(image_list)
+
+            # Post-process
+            result_list = [self.after_process(res) for res in result_list]
+
+            if self.SHOW_LOG:
+                for res, button in zip(result_list, self.buttons):
+                    logger.info(f'OCR {self.name}@{button}: {res}')
+
+        except Exception as e:
+            logger.exception(e)
+            # Return empty results matching the expected output shape
+            result_list = ['' for _ in image_list]
+
+        # Return single result if single image was passed
+        if len(self.buttons) == 1 and isinstance(image, np.ndarray):
+            return result_list[0]
+        else:
+            return result_list
 
 
 class Digit(Ocr):
