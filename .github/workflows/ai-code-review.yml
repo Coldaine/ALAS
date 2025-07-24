@@ -1,0 +1,73 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master, LLMRecognition]
+
+jobs:
+  copilot-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    permissions:
+      contents: read
+      pull-requests: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: GitHub Copilot Code Review
+        uses: github/copilot-code-review-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Focus on files most likely to have issues
+          include-patterns: |
+            module/**/*.py
+            tests/**/*.py
+            *.py
+          # Skip generated or vendor files  
+          exclude-patterns: |
+            **/__pycache__/**
+            **/node_modules/**
+            assets/**
+          # Custom prompt for ALAS-specific concerns
+          review-prompt: |
+            Focus on:
+            1. Computer vision and OCR code correctness
+            2. Android automation safety and error handling  
+            3. Memory leaks in continuous automation loops
+            4. Thread safety in concurrent operations
+            5. Performance issues in image processing
+            6. Security vulnerabilities in device connections
+            
+  # Alternative: ChatGPT-powered review as backup
+  chatgpt-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    needs: copilot-review
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: ChatGPT Code Review
+        uses: anc95/ChatGPT-CodeReview@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          # Custom prompt for game automation
+          PROMPT: |
+            You are reviewing code for ALAS (AzurLaneAutoScript), a game automation bot.
+            Focus on: OCR accuracy, device connection stability, memory usage, 
+            thread safety, error handling, and potential infinite loops.
+            
+          # Only review Python files
+          LANGUAGE: python
+          
+          # Skip large files and assets  
+          EXCLUDE: "assets/**,logs/**,*.png,*.jpg"
