@@ -5,6 +5,7 @@ import cv2
 import base64
 import os
 import numpy as np
+from datetime import datetime
 
 # Import configuration - try ollama first, fallback to gemini
 USING_OLLAMA = False
@@ -45,6 +46,30 @@ Format your response as JSON:
 {{"found": boolean, "bounding_box": [x1, y1, x2, y2], "confidence": float, "explanation": "string"}}"""
         ERROR_NO_API_KEY = "GOOGLE_API_KEY not found in environment variables"
         ERROR_MISSING_DEPS = "google-generativeai package not installed. Run: pip install google-generativeai"
+
+def preload_ollama_model():
+    """Pre-load the ollama model to avoid cold start delays."""
+    if not USING_OLLAMA:
+        return
+    
+    try:
+        import requests
+        vision_logger.info(f"Pre-loading ollama model: {VISION_MODEL}")
+        
+        # Simple test prompt to warm up the model
+        payload = {
+            "model": VISION_MODEL,
+            "prompt": "Ready",
+            "stream": False
+        }
+        
+        response = requests.post(f"{OLLAMA_API_BASE}/api/generate", json=payload, timeout=60)
+        if response.status_code == 200:
+            vision_logger.info(f"Ollama model {VISION_MODEL} pre-loaded successfully")
+        else:
+            vision_logger.warning(f"Failed to pre-load ollama model: {response.status_code}")
+    except Exception as e:
+        vision_logger.warning(f"Error pre-loading ollama model: {e}")
 
 # Set consistent template matching prompt for ollama
 if USING_OLLAMA:
@@ -267,36 +292,59 @@ def call_gemini_vision(screen_b64, template_b64, template_name):
         vision_logger.error(f"Gemini API call failed for template '{template_name}': {e}")
         return {'error': str(e), 'model': GEMINI_MODEL}
 
+# --- Screenshot Saving Function ---
+def save_vision_screenshots(screen_image, template_image, template_name, matched=False):
+    """Save vision input screenshots for offline analysis."""
+    try:
+        # Import main logger for visibility
+        from module.logger import logger
+        
+        # Create filename with result
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds
+        result_str = "matched" if matched else "not_matched"
+        filename = f"{timestamp}_{template_name}_{result_str}"
+        
+        # Create directory structure
+        vision_dir = os.path.join("logs", "vision_screenshots")
+        os.makedirs(vision_dir, exist_ok=True)
+        
+        # Resize screen image to optimal size for Gemini 2.5 Flash (768x768)
+        screen_resized = cv2.resize(screen_image, (768, 768), interpolation=cv2.INTER_AREA)
+        screen_path = os.path.join(vision_dir, f"{filename}_screen.png")
+        cv2.imwrite(screen_path, screen_resized)
+        
+        # Resize template image (max 384x384 to save tokens)
+        h, w = template_image.shape[:2]
+        if h > 384 or w > 384:
+            scale = min(384/h, 384/w)
+            new_h, new_w = int(h*scale), int(w*scale)
+            template_resized = cv2.resize(template_image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        else:
+            template_resized = template_image
+        template_path = os.path.join(vision_dir, f"{filename}_template.png")
+        cv2.imwrite(template_path, template_resized)
+        
+        # Log to main ALAS logger for visibility
+        logger.info(f"Vision screenshot saved: {filename}")
+        
+    except Exception as e:
+        logger.error(f"Failed to save vision screenshots: {e}")
+
 # --- Core Logging Function ---
 def _log_vision_task(screen_image, template_image, template_name, traditional_result):
     """
     The core task that runs in a separate thread.
     """
     try:
-        # 1. Encode images to base64
-        _, screen_buffer = cv2.imencode('.png', screen_image)
-        screen_b64 = base64.b64encode(screen_buffer).decode('utf-8')
-
-        _, template_buffer = cv2.imencode('.png', template_image)
-        template_b64 = base64.b64encode(template_buffer).decode('utf-8')
-
-        # 2. Call the vision model (ollama or gemini)
-        if USING_OLLAMA:
-            llm_result = call_ollama_vision(screen_b64, template_b64, template_name)
-        else:
-            llm_result = call_gemini_vision(screen_b64, template_b64, template_name)
-
-        # 3. Log results
-        log_entry = {
-            'timestamp': time.time(),
-            'template_name': template_name,
-            'traditional_system': traditional_result,
-            'llm_system': llm_result
-        }
-        vision_logger.info(log_entry)
+        # Determine if it was a match
+        matched = traditional_result.get('matched', False)
+        
+        # Save screenshots with descriptive names for offline analysis
+        save_vision_screenshots(screen_image, template_image, template_name, matched)
 
     except Exception as e:
-        vision_logger.error(f"Error in vision logging for {template_name}: {e}")
+        from module.logger import logger
+        logger.error(f"Failed to save vision screenshots: {e}")
 
 def log_vision_comparison(screen_image, template_image, template_name, traditional_result):
     """

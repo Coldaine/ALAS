@@ -98,6 +98,10 @@ class OcrYuv(Ocr):
     pass
 
 
+class DigitYuv(Digit, OcrYuv):
+    pass
+
+
 class DigitCounterYuv(DigitCounter, OcrYuv):
     pass
 
