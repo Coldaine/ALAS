@@ -35,7 +35,7 @@ The codebase follows a modular architecture where each game feature is implement
 
 - **module/base/**: Core utilities including decorators, timers, filters, and the critical `Button` class that represents UI elements
 - **module/device/**: Device abstraction layer supporting multiple connection methods (ADB, uiautomator2, minitouch)
-- **module/ocr/**: OCR system with flexible backend support (EasyOCR, Tesseract, or SimpleOCR fallback)
+- **module/ocr/**: OCR system with flexible backend support (PaddleOCR, EasyOCR, or SimpleOCR fallback)
 - **module/config/**: Configuration management, argument parsing, and i18n support
 - **module/webui/**: PyWebIO-based web interface
 
@@ -172,7 +172,7 @@ Successfully implemented PaddleOCR backend with fallback system:
 ## Common Issues
 
 ### OCR Not Working
-- Install an OCR backend: `poetry add easyocr` or install Tesseract
+- Install an OCR backend: `poetry add paddleocr` (recommended) or `poetry add easyocr`
 - Without OCR, ALAS runs but returns empty strings for text
 
 ### Device Connection Failed

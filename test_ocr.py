@@ -88,29 +88,36 @@ def test_ocr_models():
         print(f"Error in atomic_ocr_for_single_lines: {e}")
 
 
-def test_tesseract_availability():
-    """Check if Tesseract is available"""
-    print("\n--- Checking Tesseract availability ---")
+def test_ocr_backend_availability():
+    """Check if OCR backend is available"""
+    print("\n--- Checking OCR backend availability ---")
     
     try:
-        import pytesseract
-        version = pytesseract.get_tesseract_version()
-        print(f"[OK] Tesseract version: {version}")
+        from module.ocr.ocr import OCR_MODEL
+        backend_name = type(OCR_MODEL).__name__
+        print(f"[OK] OCR backend loaded: {backend_name}")
+        
+        if hasattr(OCR_MODEL, 'name'):
+            print(f"[INFO] Backend details: {OCR_MODEL.name}")
+            
     except Exception as e:
-        print(f"[ERROR] Tesseract not available: {e}")
-        print("\nPlease install Tesseract:")
-        print("1. Download from: https://github.com/UB-Mannheim/tesseract/wiki")
-        print("2. Install to: C:\\Program Files\\Tesseract-OCR")
-        print("3. Add to PATH")
+        print(f"[ERROR] OCR backend not available: {e}")
+        print("\nPlease install OCR dependencies:")
+        print("1. poetry add paddleocr  # Recommended")
+        print("2. poetry add easyocr    # Fallback")
         return False
     
     return True
 
 
 if __name__ == "__main__":
-    # Test Tesseract availability first
-    if test_tesseract_availability():
+    print("="*60)
+    print("ALAS OCR System Test")
+    print("="*60)
+    
+    # Test OCR backend availability first
+    if test_ocr_backend_availability():
         # Run OCR tests
         test_ocr_models()
     else:
-        print("\nSkipping OCR tests - Tesseract not available")
+        print("\nSkipping OCR tests - OCR backend not available")

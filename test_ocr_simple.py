@@ -24,29 +24,26 @@ def create_test_image(text="TEST 123", width=200, height=50):
     return np.array(img)
 
 
-def test_tesseract_direct():
-    """Test Tesseract directly"""
-    print("Testing Tesseract directly...")
+def test_ocr_backend():
+    """Test current OCR backend (PaddleOCR/EasyOCR)"""
+    print("Testing OCR backend...")
     
     try:
-        import pytesseract
+        from module.ocr.ocr import OCR_MODEL
         
         # Create test image
         img = create_test_image("HELLO WORLD")
         
-        # Try OCR
-        text = pytesseract.image_to_string(img)
-        print(f"Direct Tesseract result: '{text.strip()}'")
+        # Try OCR with current backend
+        result = OCR_MODEL.ocr([img], cls=True)
+        print(f"OCR backend: {type(OCR_MODEL).__name__}")
+        print(f"OCR result: {result}")
         
-        # Check version
-        version = pytesseract.get_tesseract_version()
-        print(f"Tesseract version: {version}")
+        return True
         
     except Exception as e:
-        print(f"Tesseract error: {e}")
+        print(f"OCR backend error: {e}")
         return False
-    
-    return True
 
 
 def test_ocr_module():
@@ -85,15 +82,16 @@ def test_ocr_module():
 
 if __name__ == "__main__":
     print("="*60)
-    print("OCR Simple Test")
+    print("ALAS OCR System Test")
     print("="*60)
     
-    # Test Tesseract directly
-    if test_tesseract_direct():
+    # Test current OCR backend
+    if test_ocr_backend():
+        print("\n" + "="*40)
         # Test our module
         test_ocr_module()
     else:
-        print("\nTesseract not available. Please install:")
-        print("1. Download from: https://github.com/UB-Mannheim/tesseract/wiki")
-        print("2. Install to: C:\\Program Files\\Tesseract-OCR")
-        print("3. Add to PATH")
+        print("\nOCR backend not available.")
+        print("Install OCR dependencies:")
+        print("1. poetry add paddleocr  # Recommended")
+        print("2. poetry add easyocr    # Fallback")
