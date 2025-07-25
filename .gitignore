@@ -276,4 +276,7 @@ test_*.py
 # Temporary documentation and analysis files
 *_critique.md
 *_summary.py
+*_summary.md
 commit_critique.md
+_commitCritique.md
+ocr_fix_summary.md
