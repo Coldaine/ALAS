@@ -7,6 +7,7 @@ from functools import wraps
 from typing import List
 
 import websockets
+from websockets.client import ClientConnection
 from adbutils.errors import AdbError
 from uiautomator2 import _Service
 
@@ -462,7 +463,7 @@ class Minitouch(Connection):
     _minitouch_port: int = 0
     _minitouch_client: socket.socket = None
     _minitouch_pid: int
-    _minitouch_ws: websockets.WebSocketClientProtocol
+    _minitouch_ws: ClientConnection
     max_x: int
     max_y: int
     _minitouch_init_thread = None

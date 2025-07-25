@@ -34,6 +34,8 @@ pypresence
 # OCR (optional - install one of these for OCR functionality)
 # easyocr  # Recommended for best accuracy
 # pytesseract  # Requires Tesseract executable
+paddleocr
+paddlepaddle
 
 # LLM Vision (optional - for experimental LLM-based template matching)
 # google-generativeai  # For Gemini Flash 2.5 vision analysis
