@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ IMPORTANT: Always Use Poetry
+
+**ALWAYS use Poetry for this project. Never use pip directly or system Python.**
+
+Poetry manages dependencies in an isolated virtual environment and ensures consistent versions. The pyproject.toml has been carefully configured with exact dependency versions that work together.
+
+```bash
+# REQUIRED: Install Poetry if not available
+curl -sSL https://install.python-poetry.org | python -
+
+# REQUIRED: Install dependencies
+poetry install
+
+# REQUIRED: Always use 'poetry run' prefix for all Python commands
+poetry run python alas.py
+poetry run python gui.py
+poetry run python -m deploy.installer
+```
+
 ## Overview
 
 ALAS (AzurLaneAutoScript) is an automation bot for the Azur Lane mobile game. It uses computer vision and OCR to read game state and automate gameplay tasks.
@@ -9,19 +28,14 @@ ALAS (AzurLaneAutoScript) is an automation bot for the Azur Lane mobile game. It
 ## Running ALAS
 
 ```bash
-# Install dependencies (recommended - using Poetry)
+# Install dependencies with Poetry (REQUIRED)
 poetry install
 
-# Alternative: Install via pip
-# pip install .
+# Run CLI directly (RECOMMENDED)
+poetry run python alas.py
 
 # Run GUI (web interface on port 22267)
 poetry run python gui.py
-# Or: python gui.py (if using pip install)
-
-# Run CLI directly
-poetry run python alas.py
-# Or: python alas.py (if using pip install)
 
 # Install/update ALAS components
 poetry run python -m deploy.installer
@@ -86,32 +100,63 @@ from module.ocr.models import OCR_MODEL       # Factory that creates AlOcr insta
 4. Implement logic extending `ModuleBase`
 5. Add configuration in `config/argument/`
 
+### Testing
+
+```bash
+# Run full test suite
+poetry run python run_tests.py
+
+# Run quick unit tests only
+poetry run python run_tests.py --quick
+
+# Run integration tests
+poetry run python run_tests.py --integration
+
+# Run specific test file
+poetry run python run_tests.py --file test_ocr_system.py
+
+# Check dependencies only
+poetry run python run_tests.py --check-deps
+
+# Run pytest directly (advanced)
+poetry run python -m pytest tests/ -v
+```
+
 ### Debugging
 
 ```bash
 # Enable debug logging
 poetry run python alas.py --debug
 
-# Test OCR functionality
-poetry run python test_ocr_simple.py
-
 # Check device connection
 poetry run python -m uiautomator2 init
 
-# Run test suite
-poetry run python run_tests.py
+# Test OCR with actual screenshots
+poetry run python test_ocr_with_screenshots.py
+
+# Live OCR testing
+poetry run python test_ocr_live.py
 ```
 
-### Code Style
+### Code Quality
 
-The project has been modernized to Python 3.10+ with modern syntax:
+The project uses Python 3.10+ with modern syntax and comprehensive tooling:
 
 ```bash
-# Optional code formatting (low priority)
+# Code formatting
 poetry run black .
 
-# Optional linting (low priority)
+# Linting and code analysis
 poetry run ruff check . --fix
+
+# Type checking
+poetry run mypy module/
+
+# Import sorting
+poetry run isort .
+
+# Run all quality checks
+poetry run black . && poetry run ruff check . --fix && poetry run isort .
 ```
 
 ## Current Development Status
