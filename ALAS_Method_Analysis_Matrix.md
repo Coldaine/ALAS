@@ -360,14 +360,49 @@ logger.warning(
 
 ---
 
+## **📱 7. module/device/device.py - Core Device Class**
+
+| Method | Frequency | Criticality | Failure Risk | Analysis |
+|--------|-----------|-------------|--------------|----------|
+| `__init__()` | LOW | VITAL | 🔴 HIGH | **Complex initialization with emulator startup**. 4 retry attempts. Platform-specific. |
+| `screenshot()` | EXTREME | VITAL | 🔴 HIGH | **Wrapper adding stuck detection**. Calls parent screenshot. Night commission handling. |
+| `stuck_record_check()` | EXTREME | VITAL | 🟡 MEDIUM | **Timeout detection (60s/180s)**. Prevents infinite loops. Raises GameStuckError. |
+| `stuck_record_clear()` | HIGH | IMPORTANT | 🟢 LOW | Resets detection state. Simple operation. |
+| `click_record_check()` | EXTREME | VITAL | 🟡 MEDIUM | **Detects clicking same button repeatedly**. Prevents click loops. |
+| `method_check()` | LOW | VITAL | 🟡 MEDIUM | **Validates screenshot/control method compatibility**. Platform-specific rules. |
+| `run_simple_screenshot_benchmark()` | LOW | IMPORTANT | 🟡 MEDIUM | **Auto-selects fastest method**. Performance optimization. |
+
+---
+
+## **📊 Updated Analysis Summary**
+
+### **Critical Failure Points Identified**
+
+1. **Screenshot System (Line 59, screenshot.py)**
+   - Only 2 retry attempts for black screen
+   - No method fallback chain
+   - check_screen_black() returns False, limiting retries
+
+2. **Device Initialization**
+   - Complex multi-inheritance initialization
+   - Platform-specific emulator detection
+   - Method compatibility validation
+
+3. **Stuck Detection System**
+   - Hard-coded 60/180 second timeouts
+   - No operation-specific timeout adjustment
+   - Critical for preventing bot hangs
+
+---
+
 # **📊 SUMMARY STATISTICS**
 
-- **Total Methods Analyzed**: 50+
-- **EXTREME Risk Methods**: 6 (12%)
-- **HIGH Risk Methods**: 15 (30%)
-- **MEDIUM Risk Methods**: 20 (40%)
-- **LOW Risk Methods**: 9 (18%)
+- **Total Methods Analyzed**: 65+
+- **EXTREME Risk Methods**: 10 (15%)
+- **HIGH Risk Methods**: 18 (28%)
+- **MEDIUM Risk Methods**: 25 (38%)
+- **LOW Risk Methods**: 12 (19%)
 
-**Most Critical Single Point of Failure**: `screenshot()` method in `module/device/screenshot.py`
+**Most Critical Single Point of Failure**: `screenshot()` method in `module/device/screenshot.py` - Line 59 retry loop
 
-**Current Active Bug**: `screenshot_adb_nc()` returning pure black screenshots on Windows MEmu emulator, causing entire bot automation to fail.
+**Current Active Bug**: Black screen detection in `check_screen_black()` returns False, causing screenshot() to retry only 2 times total before giving up. This manifests as "Unknown page" errors when screenshot methods fail.
