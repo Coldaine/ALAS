@@ -701,8 +701,8 @@ class RewardTacticalClass(Dock):
             #         continue
             #     if re.search(r'[—\-一]{2,}', level):
             #         continue
-            if re.search(r"[—一]+", level):
-                continue
+            # if re.search(r"[—一]+", level):
+            #     continue
             # Use 'MA' as a part of `MAX`.
             # SKILL_LEVEL_GRIDS may move a little lower for unknown reason, OCR results are like:
             # ['NEXT:MA', 'NEXT:/1D]', 'NEXT:MA'] (Actually: `NEXT:MAX, NEXT:0/100, NEXT:MAX`)

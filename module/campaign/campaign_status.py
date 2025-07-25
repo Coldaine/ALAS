@@ -22,7 +22,7 @@ from module.log_res.log_res import LogRes
 
 class PtOcr(Ocr):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, lang="azur_lane", alphabet="X0123456789", **kwargs)
+        super().__init__(*args, alphabet="X0123456789", **kwargs)
 
     def pre_process(self, image):
         """

@@ -9,14 +9,81 @@ from module.base.utils import *
 from module.logger import logger
 from module.ocr.rpc import ModelProxyFactory
 from module.webui.setting import State
-
-if TYPE_CHECKING:
-    from module.ocr.al_ocr import AlOcr
-
-if not State.deploy_config.UseOcrServer:
-    from module.ocr.models import OCR_MODEL
-else:
-    OCR_MODEL = ModelProxyFactory()
+# OCR backend with PaddleOCR interface compatibility
+try:
+    from paddleocr import PaddleOCR
+    # Initialize PaddleOCR with optimized settings for ALAS
+    OCR_MODEL = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=False)
+    logger.info('Using PaddleOCR backend for OCR functionality.')
+except ImportError:
+    # Fallback: Create PaddleOCR-compatible wrapper around EasyOCR
+    logger.info('PaddleOCR not available, creating EasyOCR compatibility wrapper.')
+    
+    try:
+        import easyocr
+        
+        class PaddleOCRCompatWrapper:
+            """EasyOCR wrapper that mimics PaddleOCR interface for ALAS compatibility."""
+            
+            def __init__(self):
+                self.reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                self.name = 'EasyOCR-PaddleOCR-Compat'
+            
+            def ocr(self, images, cls=True, **kwargs):
+                """
+                OCR with PaddleOCR-compatible interface.
+                
+                Args:
+                    images: Single image or list of images (numpy arrays)
+                    cls: Angle classification (ignored for EasyOCR compatibility)
+                    
+                Returns:
+                    List in PaddleOCR format: [result_per_image, ...]
+                    Each result_per_image: [[[x1,y1],[x2,y2],[x3,y3],[x4,y4]], (text, confidence)]
+                """
+                # Handle single image
+                if not isinstance(images, list):
+                    images = [images]
+                
+                results = []
+                for image in images:
+                    try:
+                        # EasyOCR returns: [[[x1,y1],[x2,y2],[x3,y3],[x4,y4]], text, confidence]
+                        easyocr_results = self.reader.readtext(image, detail=1)
+                        
+                        # Convert to PaddleOCR format: [[[box]], (text, confidence)]
+                        paddleocr_format = []
+                        for detection in easyocr_results:
+                            box, text, confidence = detection
+                            paddleocr_format.append([box, (text, confidence)])
+                        
+                        results.append(paddleocr_format if paddleocr_format else None)
+                    except Exception as e:
+                        logger.warning(f"EasyOCR processing failed: {e}")
+                        results.append(None)
+                
+                return results
+            
+            def close(self):
+                """Close method for compatibility with PaddleOCR interface."""
+                pass
+        
+        OCR_MODEL = PaddleOCRCompatWrapper()
+        logger.info('Using EasyOCR with PaddleOCR compatibility wrapper.')
+        
+    except ImportError:
+        # Final fallback: Minimal OCR that returns PaddleOCR-compatible empty results
+        class MinimalPaddleOCR:
+            def ocr(self, images, cls=True, **kwargs):
+                if not isinstance(images, list):
+                    images = [images]
+                return [None] * len(images)  # PaddleOCR returns None for no text found
+            
+            def close(self):
+                pass
+        
+        OCR_MODEL = MinimalPaddleOCR()
+        logger.warning('No OCR backend available - using minimal PaddleOCR-compatible fallback.')
 
 
 class Ocr:
@@ -78,10 +145,51 @@ class Ocr:
             direct_ocr (bool): True to skip preprocess.
 
         Returns:
-            str: Empty string as OCR functionality has been removed
+            str, list[str]:
         """
-        logger.warning("OCR functionality has been removed. Returning empty result.")
-        return ""  # Return empty string instead of raising error to avoid breaking existing code
+        if image is None:
+            return '' if not isinstance(self._buttons, list) or len(self._buttons) <= 1 else []
+
+        image_list = image if isinstance(image, list) else [image]
+        if not image_list:
+            return []
+
+        result_list = []
+        try:
+            # Pre-process
+            if not direct_ocr:
+                image_list = [self.pre_process(img) for img in image_list]
+
+            # PaddleOCR returns a list of results, one for each image.
+            # Each result is a list of [box, (text, score)].
+            results = OCR_MODEL.ocr(image_list, cls=True)
+            result_list = []
+            for result_per_image in results:
+                if result_per_image:
+                    # Concat all text found in one image
+                    text = ' '.join([line[1][0] for line in result_per_image])
+                    result_list.append(text)
+                else:
+                    # No text found
+                    result_list.append('')
+
+            # Post-process
+            result_list = [self.after_process(res) for res in result_list]
+
+            if self.SHOW_LOG:
+                for res, button in zip(result_list, self.buttons):
+                    logger.info(f'OCR {self.name}@{button}: {res}')
+
+        except Exception as e:
+            logger.exception(e)
+            # Return empty results matching the expected output shape
+            result_list = ['' for _ in image_list]
+
+        # Return single result if single image was passed
+        if len(self.buttons) == 1 and isinstance(image, np.ndarray):
+            return result_list[0]
+        else:
+            return result_list
 
 
 class Digit(Ocr):
@@ -95,6 +203,10 @@ class DigitCounter(Digit):
 class OcrYuv(Ocr):
     """Base class for YUV-based OCR (deprecated)"""
 
+    pass
+
+
+class DigitYuv(Digit, OcrYuv):
     pass
 
 

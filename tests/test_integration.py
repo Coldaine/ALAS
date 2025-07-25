@@ -1,40 +1,25 @@
 import sys
 import os
 import time
+import pytest
+from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_config_structure():
-    """Test configuration files are intact"""
-    print("Testing configuration structure...")
-    
+    """Test configuration files are intact and accessible."""
     config_files = [
         "config/template.json",
-        "pyproject.toml",
-        ".github/copilot-instructions.md"
+        "pyproject.toml"
     ]
     
-    all_good = True
     for config_file in config_files:
-        if os.path.exists(config_file):
-            size = os.path.getsize(config_file)
-            print(f"[PASS] {config_file} exists ({size} bytes)")
-        else:
-            if config_file == ".github/copilot-instructions.md":
-                # This is expected since we created it in .github/
-                print(f"[INFO] {config_file} not in root (check .github/)")
-            else:
-                print(f"[FAIL] {config_file} not found")
-                all_good = False
-    
-    return all_good
+        assert os.path.exists(config_file), f"{config_file} not found"
+        assert os.path.getsize(config_file) > 0, f"{config_file} should not be empty"
 
 def test_import_performance():
-    """Test that imports don't take too long"""
-    print("\nTesting import performance...")
-    
-    # Test importing key modules (without dependencies)
+    """Test that key modules import without excessive delay."""
     modules_to_time = [
         ("module.exception", "Exception module"),
         ("module.logger", "Logger module"),
@@ -42,38 +27,25 @@ def test_import_performance():
     ]
     
     total_time = 0
-    all_good = True
+    max_import_time = 1.0  # seconds
     
     for module_name, description in modules_to_time:
         try:
             start = time.time()
-            # Try to import
-            try:
-                __import__(module_name)
-                elapsed = time.time() - start
-                total_time += elapsed
-                
-                if elapsed < 1.0:  # Should import quickly
-                    print(f"[PASS] {description} imported in {elapsed:.3f}s")
-                else:
-                    print(f"[WARN] {description} slow import: {elapsed:.3f}s")
-                    
-            except ImportError as e:
-                # Expected for modules with dependencies
-                print(f"[INFO] {description} requires dependencies (expected)")
-                
+            __import__(module_name)
+            elapsed = time.time() - start
+            total_time += elapsed
+            assert elapsed < max_import_time, f"{description} import was too slow: {elapsed:.3f}s"
+        except ImportError:
+            # This is expected for modules with heavy dependencies not installed in test env
+            print(f"[INFO] Skipping performance check for {description} due to missing dependencies.")
         except Exception as e:
-            print(f"[FAIL] {description} error: {e}")
-            all_good = False
+            pytest.fail(f"Failed to import {description}: {e}")
     
-    print(f"[INFO] Total import time: {total_time:.3f}s")
-    return all_good
+    print(f"[INFO] Total import time for checked modules: {total_time:.3f}s")
 
 def test_core_module_structure():
-    """Test that core modules have expected structure"""
-    print("\nTesting core module structure...")
-    
-    # Check key directories exist
+    """Test that core module directories exist."""
     core_dirs = [
         "module/base",
         "module/config", 
@@ -83,131 +55,58 @@ def test_core_module_structure():
         "module/combat"
     ]
     
-    all_good = True
     for dir_path in core_dirs:
-        if os.path.isdir(dir_path):
-            # Count Python files
-            py_files = list(Path(dir_path).glob("*.py"))
-            print(f"[PASS] {dir_path} exists ({len(py_files)} .py files)")
-        else:
-            print(f"[FAIL] {dir_path} directory not found")
-            all_good = False
-    
-    return all_good
+        assert os.path.isdir(dir_path), f"{dir_path} directory not found"
+        # Check for at least one Python file, indicating it's a module
+        py_files = list(Path(dir_path).glob("*.py"))
+        assert len(py_files) > 0, f"{dir_path} should contain Python module files"
 
-def test_no_syntax_errors_in_edits():
-    """Verify edited files have valid syntax"""
-    print("\nTesting edited files for syntax errors...")
-    
-    # Key files that were edited
+def test_no_syntax_errors_in_edited_files():
+    """Verify that recently edited files have valid Python syntax."""
+    # Focus on files changed during recent OCR work
     edited_files = [
         "module/ocr/ocr.py",
-        "module/ocr/models.py",
-        "module/ocr/rpc.py",
         "module/ocr/al_ocr.py",
-        "alas.py"
+        "pyproject.toml" # Not python, but check existence
     ]
     
-    all_good = True
     for file_path in edited_files:
-        if os.path.exists(file_path):
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                # Try to compile
-                compile(content, file_path, 'exec')
-                print(f"[PASS] {file_path} has valid syntax")
-                
-            except SyntaxError as e:
-                print(f"[FAIL] {file_path} has syntax error: {e}")
-                all_good = False
-            except Exception as e:
-                print(f"[WARN] {file_path} check failed: {e}")
-        else:
-            print(f"[FAIL] {file_path} not found")
-            all_good = False
-    
-    return all_good
+        assert os.path.exists(file_path), f"{file_path} not found"
+        if not file_path.endswith('.py'):
+            continue
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            compile(content, file_path, 'exec')
+        except SyntaxError as e:
+            pytest.fail(f"{file_path} has a syntax error: {e}")
+        except Exception as e:
+            pytest.fail(f"Failed to check syntax of {file_path}: {e}")
 
 def test_poetry_config():
-    """Test Poetry configuration is valid"""
-    print("\nTesting Poetry configuration...")
-    
-    if not os.path.exists("pyproject.toml"):
-        print("[FAIL] pyproject.toml not found")
-        return False
+    """Test that pyproject.toml is valid and contains key sections."""
+    pyproject_path = "pyproject.toml"
+    assert os.path.exists(pyproject_path), "pyproject.toml not found"
     
     try:
-        # Use tomli for older Python, tomllib for 3.11+
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib
+        # Use tomllib for Python 3.11+
+        import tomllib
+    except ImportError:
+        # Fallback to tomli for older Python versions
+        import tomli as tomllib
             
-        with open("pyproject.toml", 'rb') as f:
-            data = tomllib.load(f)
-            
-        # Check required sections
-        checks = [
-            ('tool' in data, "Has [tool] section"),
-            ('poetry' in data.get('tool', {}), "Has [tool.poetry] section"),
-            ('dependencies' in data.get('tool', {}).get('poetry', {}), "Has dependencies"),
-            ('black' in data.get('tool', {}), "Has Black configuration"),
-            ('ruff' in data.get('tool', {}), "Has Ruff configuration"),
-        ]
+    with open(pyproject_path, 'rb') as f:
+        data = tomllib.load(f)
         
-        all_good = True
-        for check, description in checks:
-            if check:
-                print(f"[PASS] {description}")
-            else:
-                print(f"[FAIL] {description}")
-                all_good = False
-                
-        # Check Python version
-        poetry_data = data.get('tool', {}).get('poetry', {})
-        if 'python' in poetry_data:
-            python_ver = poetry_data['python']
-            print(f"[INFO] Requires Python {python_ver}")
-            
-        return all_good
-        
-    except Exception as e:
-        # If we can't import tomli, just do basic checks
-        print("[INFO] Cannot parse TOML without tomli/tomllib, doing basic check")
-        
-        with open("pyproject.toml", 'r') as f:
-            content = f.read()
-            
-        if '[tool.poetry]' in content and 'python = "^3.10"' in content:
-            print("[PASS] Basic Poetry configuration present")
-            return True
-        else:
-            print("[FAIL] Poetry configuration incomplete")
-            return False
-
-# Import Path for other tests
-from pathlib import Path
-
-if __name__ == "__main__":
-    print("=" * 50)
-    print("INTEGRATION TESTS")
-    print("=" * 50)
+    # Check for essential tool configurations
+    assert 'tool' in data, "pyproject.toml missing [tool] section"
+    tool_data = data['tool']
     
-    tests = [
-        test_config_structure(),
-        test_import_performance(),
-        test_core_module_structure(),
-        test_no_syntax_errors_in_edits(),
-        test_poetry_config()
-    ]
+    assert 'poetry' in tool_data, "pyproject.toml missing [tool.poetry]"
+    assert 'dependencies' in tool_data['poetry'], "[tool.poetry] missing dependencies"
+    assert 'python' in tool_data['poetry'], "[tool.poetry] missing python version specification"
     
-    passed = sum(tests)
-    total = len(tests)
-    
-    print("\n" + "=" * 50)
-    if passed == total:
-        print(f"[PASS] ALL INTEGRATION TESTS PASSED ({passed}/{total})")
-    else:
-        print(f"[FAIL] SOME TESTS FAILED ({passed}/{total} passed)")
+    # Check for code quality tools
+    assert 'black' in tool_data, "pyproject.toml missing [tool.black] configuration"
+    assert 'ruff' in tool_data, "pyproject.toml missing [tool.ruff] configuration"

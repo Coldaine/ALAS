@@ -72,6 +72,7 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
             if self.config.Error_SaveError:
                 self.screenshot_deque.append({"time": datetime.now(), "image": self.image})
 
+
             if self.check_screen_size() and self.check_screen_black():
                 break
             else:
@@ -133,16 +134,21 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
         """
         now = time.time()
         if interval is None:
-            interval = self.config.SCREEN_SHOT_SAVE_INTERVAL
+            # Default interval of 2 seconds if not specified
+            interval = 2
 
         if now - self._last_save_time.get(genre, 0) > interval:
             fmt = "png"
             file = f"{int(now * 1000)}.{fmt}"
 
-            folder = self.config.SCREEN_SHOT_SAVE_FOLDER_BASE if to_base_folder else self.config.SCREEN_SHOT_SAVE_FOLDER
+            # Use DropRecord_SaveFolder as the base folder
+            folder = self.config.DropRecord_SaveFolder
+            if to_base_folder:
+                # Create a 'base' subdirectory for base folder screenshots
+                folder = os.path.join(folder, 'base')
             folder = os.path.join(folder, genre)
             if not os.path.exists(folder):
-                os.mkdir(folder)
+                os.makedirs(folder, exist_ok=True)
 
             file = os.path.join(folder, file)
             self.image_save(file)
