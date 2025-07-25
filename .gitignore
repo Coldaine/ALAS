@@ -257,3 +257,23 @@ console.bat
 
 # Pylance configuration file
 pyrightconfig.json
+
+# Test screenshots and debug images
+sshots/
+test_*.png
+test_*.bmp
+debug_*.png
+direct_*.png
+timer_*.png
+
+# Temporary OCR test scripts
+check_*.py
+diagnose_*.py
+find_*.py
+fix_*.py
+test_*.py
+
+# Temporary documentation and analysis files
+*_critique.md
+*_summary.py
+commit_critique.md
