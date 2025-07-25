@@ -26,7 +26,15 @@ def _requirements_modify(text: str) -> str:
 
 
 def requirements_modify(file='requirements.txt'):
-    print(f'requirements_modify: {file}')
+    """
+    DEPRECATED: This function is no longer used as ALAS now uses Poetry for dependency management.
+    Legacy requirements.txt files are still generated for Docker and AidLux compatibility.
+    """
+    print(f'[DEPRECATED] requirements_modify: {file} - Use Poetry for main dependency management')
+    if not os.path.exists(file):
+        print(f'File {file} does not exist - skipping (Poetry is now used for main dependencies)')
+        return
+        
     with open(file, 'r') as f:
         text = f.read()
 
@@ -37,7 +45,13 @@ def requirements_modify(file='requirements.txt'):
 
 
 if __name__ == '__main__':
-    requirements_modify()
+    print("ALAS now uses Poetry for dependency management.")
+    print("Generating legacy requirements files for Docker and AidLux compatibility...")
+    
+    # Skip main requirements.txt as we use Poetry now
+    # requirements_modify()
+    
+    # Generate specialized requirements for deployment environments
     aidlux_requirements_generate()
     docker_requirements_generate()
     headless_requirements_generate()

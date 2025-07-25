@@ -9,17 +9,22 @@ ALAS (AzurLaneAutoScript) is an automation bot for the Azur Lane mobile game. It
 ## Running ALAS
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (recommended - using Poetry)
+poetry install
+
+# Alternative: Install via pip
+# pip install .
 
 # Run GUI (web interface on port 22267)
-python gui.py
+poetry run python gui.py
+# Or: python gui.py (if using pip install)
 
 # Run CLI directly
-python alas.py
+poetry run python alas.py
+# Or: python alas.py (if using pip install)
 
 # Install/update ALAS components
-python -m deploy.installer
+poetry run python -m deploy.installer
 ```
 
 ## Architecture
@@ -85,13 +90,16 @@ from module.ocr.models import OCR_MODEL       # Factory that creates AlOcr insta
 
 ```bash
 # Enable debug logging
-python alas.py --debug
+poetry run python alas.py --debug
 
 # Test OCR functionality
-python test_ocr_simple.py
+poetry run python test_ocr_simple.py
 
 # Check device connection
-python -m uiautomator2 init
+poetry run python -m uiautomator2 init
+
+# Run test suite
+poetry run python run_tests.py
 ```
 
 ### Code Style
@@ -100,10 +108,10 @@ The project has been modernized to Python 3.10+ with modern syntax:
 
 ```bash
 # Optional code formatting (low priority)
-black .
+poetry run black .
 
 # Optional linting (low priority)
-ruff check . --fix
+poetry run ruff check . --fix
 ```
 
 ## Current Development Status
@@ -164,19 +172,19 @@ Successfully implemented PaddleOCR backend with fallback system:
 ## Common Issues
 
 ### OCR Not Working
-- Install an OCR backend: `pip install easyocr` or install Tesseract
+- Install an OCR backend: `poetry add easyocr` or install Tesseract
 - Without OCR, ALAS runs but returns empty strings for text
 
 ### Device Connection Failed
 - Check ADB is installed and in PATH
 - Try `adb devices` to verify connection
-- Use `python -m uiautomator2 init` for uiautomator2 setup
+- Use `poetry run python -m uiautomator2 init` for uiautomator2 setup
 
 ### Unicode Errors on Windows
 - ✅ **Fixed**: Logger Unicode issues resolved by replacing box-drawing characters with ASCII equivalents
 
 ### Testing LLM Vision Integration
 - Start MEmu emulator with Azur Lane
-- Run ALAS with `python alas.py` 
+- Run ALAS with `poetry run python alas.py` 
 - Check `logs/vision_llm.log` for comparative analysis data
 - Monitor both traditional template matching and LLM vision results

@@ -55,7 +55,9 @@ class PipManager(DeployConfig):
 
     @cached_property
     def requirements_file(self):
-        if self.RequirementsFile == 'requirements.txt':
+        if self.RequirementsFile == 'poetry':
+            return 'poetry'
+        elif self.RequirementsFile == 'requirements.txt':
             return 'requirements.txt'
         else:
             return self.filepath("RequirementsFile")
@@ -149,5 +151,22 @@ class PipManager(DeployConfig):
         arg += ['--disable-pip-version-check']
 
         logger.hr('Update Dependencies', 1)
-        arg = ' ' + ' '.join(arg) if arg else ''
-        self.execute(f'{self.pip} install -r {self.requirements_file}{arg}')
+        
+        if self.requirements_file == 'poetry':
+            # Use Poetry for dependency management
+            logger.info('Using Poetry for dependency management')
+            try:
+                # Check if poetry is installed
+                self.execute('poetry --version')
+                # Install dependencies using poetry
+                self.execute('poetry install')
+                logger.info('Dependencies installed successfully using Poetry')
+            except Exception as e:
+                logger.error('Poetry not found. Please install Poetry first:')
+                logger.error('curl -sSL https://install.python-poetry.org | python3 -')
+                logger.error('Or: pip install poetry')
+                raise e
+        else:
+            # Use traditional pip install for requirements.txt files
+            arg = ' ' + ' '.join(arg) if arg else ''
+            self.execute(f'{self.pip} install -r {self.requirements_file}{arg}')
