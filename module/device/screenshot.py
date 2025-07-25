@@ -56,7 +56,7 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
         self._screenshot_interval.wait()
         self._screenshot_interval.reset()
 
-        for _ in range(2):
+        for attempt in range(10):
             if self.screenshot_method_override:
                 method = self.screenshot_method_override
             else:
@@ -65,17 +65,20 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
             self.image = method()
 
             if self.config.Emulator_ScreenshotDedithering:
-                # This will take 40-60ms
-                cv2.fastNlMeansDenoising(self.image, self.image, h=17, templateWindowSize=1, searchWindowSize=2)
+                if attempt == 0:
+                    cv2.fastNlMeansDenoising(self.image, self.image, h=17, templateWindowSize=1, searchWindowSize=2)
             self.image = self._handle_orientated_image(self.image)
 
             if self.config.Error_SaveError:
                 self.screenshot_deque.append({"time": datetime.now(), "image": self.image})
 
-
             if self.check_screen_size() and self.check_screen_black():
                 break
             else:
+                if attempt < 9:
+                    wait_time = min(0.5 * (2 ** attempt), 5.0)
+                    logger.warning(f"Screenshot retry {attempt + 1}/10, waiting {wait_time:.1f}s")
+                    time.sleep(wait_time)
                 continue
 
         return self.image
@@ -274,6 +277,7 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
                     f"Screenshot method `{self.config.Emulator_ScreenshotMethod}` "
                     f"may not work on emulator `{self.serial}`, or the emulator is not fully started"
                 )
+                logger.warning(f"Consider trying alternative screenshot methods: {list(self.screenshot_methods.keys())}")
                 if self.is_mumu_family:
                     if self.config.Emulator_ScreenshotMethod == "DroidCast":
                         self.droidcast_stop()
