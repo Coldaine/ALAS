@@ -23,7 +23,7 @@ try:
         has_predict = hasattr(_test_ocr, 'predict')
     except:
         # Fallback to PaddleOCR 2.x initialization
-        _test_ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=False)
+        _test_ocr = PaddleOCR(use_angle_cls=True, lang='en')
         has_predict = False
     
     if has_predict:
