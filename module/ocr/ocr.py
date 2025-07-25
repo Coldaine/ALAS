@@ -1,7 +1,10 @@
 import time
-from datetime import timedelta
+import os
+import json
+from datetime import timedelta, datetime
 from typing import TYPE_CHECKING
 
+import cv2
 import module.config.server as server
 from module.base.button import Button
 from module.base.decorator import cached_property
@@ -9,6 +12,7 @@ from module.base.utils import *
 from module.logger import logger
 from module.ocr.rpc import ModelProxyFactory
 from module.webui.setting import State
+from module.base.error_handler import OCR_ERROR_COUNTER
 # OCR backend with PaddleOCR interface compatibility
 try:
     from paddleocr import PaddleOCR
@@ -89,6 +93,11 @@ except ImportError:
 class Ocr:
     SHOW_LOG = True
     SHOW_REVISE_WARNING = False
+    
+    # OCR debug screenshot settings
+    OCR_DEBUG_DIR = './log/ocr_debug'
+    OCR_DEBUG_MAX_FILES = 10
+    _ocr_debug_counter = 0
 
     def __init__(self, buttons, letter=(255, 255, 255), threshold=128, alphabet=None, name=None):
         """
@@ -137,6 +146,60 @@ class Ocr:
             str:
         """
         return result
+    
+    def save_ocr_debug_screenshot(self, image, button_area, ocr_result):
+        """
+        Save OCR debug screenshot with rotating filenames
+        
+        Args:
+            image (np.ndarray): The image being OCR'd
+            button_area (tuple): The area coordinates (x1, y1, x2, y2)
+            ocr_result (str): The OCR result text
+        """
+        # Check if debug screenshots are enabled (default to True if no config available)
+        enabled = True
+        try:
+            # Try to get config from module.config.config if available
+            from module.config.config import Config
+            if hasattr(Config, 'Error_SaveOcrDebugScreenshots'):
+                enabled = Config.Error_SaveOcrDebugScreenshots
+        except:
+            pass
+            
+        if not enabled:
+            return
+            
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(self.OCR_DEBUG_DIR, exist_ok=True)
+            
+            # Get current counter and increment
+            counter = Ocr._ocr_debug_counter
+            Ocr._ocr_debug_counter = (Ocr._ocr_debug_counter + 1) % self.OCR_DEBUG_MAX_FILES
+            
+            # Create filenames
+            image_filename = os.path.join(self.OCR_DEBUG_DIR, f'ocr_{counter}.png')
+            metadata_filename = os.path.join(self.OCR_DEBUG_DIR, f'ocr_{counter}.json')
+            
+            # Save image
+            cv2.imwrite(image_filename, image)
+            
+            # Save metadata
+            metadata = {
+                'timestamp': datetime.now().isoformat(),
+                'button_name': self.name,
+                'button_area': button_area,
+                'ocr_result': ocr_result,
+                'success': bool(ocr_result and ocr_result.strip())
+            }
+            
+            with open(metadata_filename, 'w') as f:
+                json.dump(metadata, f, indent=2)
+                
+            logger.debug(f'Saved OCR debug screenshot: {image_filename}')
+            
+        except Exception as e:
+            logger.warning(f'Failed to save OCR debug screenshot: {e}')
 
     def ocr(self, image, direct_ocr=False):
         """
@@ -157,8 +220,12 @@ class Ocr:
         result_list = []
         try:
             # Pre-process
+            preprocessed_images = []
             if not direct_ocr:
-                image_list = [self.pre_process(img) for img in image_list]
+                for img in image_list:
+                    preprocessed = self.pre_process(img)
+                    preprocessed_images.append(preprocessed)
+                image_list = preprocessed_images
 
             # PaddleOCR returns a list of results, one for each image.
             # Each result is a list of [box, (text, score)].
@@ -175,6 +242,10 @@ class Ocr:
 
             # Post-process
             result_list = [self.after_process(res) for res in result_list]
+            
+            # Save debug screenshots
+            for idx, (img, res, button) in enumerate(zip(image_list, result_list, self.buttons)):
+                self.save_ocr_debug_screenshot(img, button, res)
 
             if self.SHOW_LOG:
                 for res, button in zip(result_list, self.buttons):
@@ -252,13 +323,42 @@ class Duration(Ocr):
         Returns:
             datetime.timedelta:
         """
-        result = re.search(r"(\d{1,2}):?(\d{2}):?(\d{2})", string)
-        if result:
-            result = [int(s) for s in result.groups()]
+        # Log what we're trying to parse for debugging
+        logger.info(f"Duration.parse_time() received: '{string[:50]}...' (length: {len(string)})")
+        
+        # Try to find any time-like patterns in the string
+        all_matches = re.findall(r"(\d{1,2}):(\d{2}):?(\d{2})", string)
+        if all_matches:
+            logger.info(f"Found time patterns: {all_matches}")
+            # Use the first valid match
+            result = [int(s) for s in all_matches[0]]
+            # Record success - reset error counter
+            if OCR_ERROR_COUNTER:
+                OCR_ERROR_COUNTER.record_success("ocr_duration")
             return timedelta(hours=result[0], minutes=result[1], seconds=result[2])
-        else:
-            logger.warning(f"Invalid duration: {string}")
+        
+        # Also try patterns with dots or other separators
+        alt_matches = re.findall(r"(\d{1,2})[.:,](\d{2})[.:,]?(\d{2})", string)
+        if alt_matches:
+            logger.info(f"Found alternative time patterns: {alt_matches}")
+            result = [int(s) for s in alt_matches[0]]
+            # Record success - reset error counter
+            if OCR_ERROR_COUNTER:
+                OCR_ERROR_COUNTER.record_success("ocr_duration")
+            return timedelta(hours=result[0], minutes=result[1], seconds=result[2])
+            
+        # No valid time pattern found - record error
+        error_msg = f"No time pattern found in OCR result: {string[:100]}..."
+        try:
+            if OCR_ERROR_COUNTER:
+                OCR_ERROR_COUNTER.record_error("ocr_duration", error_msg)
+            # If we're still under the threshold, return zero duration
+            logger.warning(f"Invalid duration - returning zero timedelta")
             return timedelta(hours=0, minutes=0, seconds=0)
+        except Exception as e:
+            # Max errors exceeded - stop the bot
+            logger.error("Maximum OCR parsing failures exceeded - stopping bot")
+            raise
 
 
 class DurationYuv(Duration, OcrYuv):

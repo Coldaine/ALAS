@@ -14,6 +14,7 @@ from module.config.deep import deep_get, deep_set
 from module.exception import *
 from module.logger import logger
 from module.notify import handle_notify
+from module.base.error_handler import init_error_counter
 
 
 class AzurLaneAutoScript:
@@ -45,6 +46,10 @@ class AzurLaneAutoScript:
         try:
             from module.device.device import Device
             device = Device(config=self.config)
+            
+            # Initialize error counter with config after device is created
+            init_error_counter(self.config)
+            
             return device
         except RequestHumanTakeover:
             logger.critical('Request human takeover')
@@ -122,6 +127,16 @@ class AzurLaneAutoScript:
                 title=f"Alas <{self.config_name}> crashed",
                 content=f"<{self.config_name}> RequestHumanTakeover",
             )
+            exit(1)
+        except OcrParseError as e:
+            logger.critical(f'OCR parsing failed too many times: {e}')
+            self.save_error_log()
+            handle_notify(
+                self.config.Error_OnePushConfig,
+                title=f"Alas <{self.config_name}> OCR Error",
+                content=f"<{self.config_name}> OCR failed to parse text after multiple attempts",
+            )
+            logger.error('Bot stopped due to repeated OCR failures. Please check your OCR settings or emulator display.')
             exit(1)
         except Exception as e:
             logger.exception(e)
