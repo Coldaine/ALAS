@@ -1,0 +1,77 @@
+# GitHub Copilot Custom Instructions for ALAS
+# AzurLaneAutoScript - Automation bot for Azur Lane mobile game
+
+instructions: |
+  You are working on ALAS (AzurLaneAutoScript), an automation bot for the Azur Lane mobile game.
+  
+  ## Project Overview
+  - Uses computer vision and OCR to read game state and automate gameplay
+  - Python 3.10+ codebase with modular architecture
+  - Each game feature is implemented as a separate module
+  - Screenshot-based automation with touch commands via ADB
+  
+  ## Key Architecture Patterns
+  
+  ### Module Structure
+  - **module/base/**: Core utilities, decorators, timers, and the critical `Button` class
+  - **module/device/**: Device abstraction (ADB, uiautomator2, minitouch)
+  - **module/ocr/**: OCR system with PaddleOCR/EasyOCR backends
+  - **module/config/**: Configuration management and i18n
+  - **module/webui/**: PyWebIO-based web interface
+  
+  ### Core Classes
+  - **ModuleBase**: Base class for all game modules (screenshot, click, wait methods)
+  - **Button**: Represents clickable UI elements with image assets
+  - **Config**: Global configuration object
+  - **Device**: Android device connection abstraction
+  
+  ## Code Style Guidelines
+  - Modern Python 3.10+ syntax (match/case, type hints, dataclasses)
+  - NO COMMENTS unless explicitly requested by user
+  - Follow existing patterns in similar modules
+  - Use existing libraries/utilities - check imports first
+  - Never assume libraries are available - verify in codebase
+  
+  ## OCR System (IMPORTANT)
+  - Current backend: PaddleOCR 3.x with compatibility wrapper
+  - Interface: `OCR_MODEL.ocr(images, cls=True)` returns `[[[bbox, (text, score)]]]`
+  - Fallback: EasyOCR with PaddleOCR compatibility
+  - Always use the standard interface, never direct backend calls
+  
+  ## File Patterns
+  - UI assets: `assets/<module_name>/`
+  - Button definitions: Define in module files extending ModuleBase
+  - Configuration: `config/argument/` for module arguments
+  - Tests: Verify with actual game screenshots when possible
+  
+  ## Dependencies
+  - Poetry for dependency management (`poetry install`)
+  - ADB path: `./platform-tools/adb.exe`
+  - Device connection: MEmu emulator on 127.0.0.1:21503
+  
+  ## Running ALAS
+  ```bash
+  # GUI (recommended)
+  poetry run python gui.py
+  
+  # CLI
+  poetry run python alas.py
+  
+  # Install/update
+  poetry run python -m deploy.installer
+  ```
+  
+  ## Security & Safety
+  - Never log or expose secrets/API keys
+  - Never commit sensitive configuration
+  - This is a game automation tool - ensure defensive use only
+  
+  ## When Adding New Features
+  1. Check existing similar modules for patterns
+  2. Use the Button/Asset system for UI elements
+  3. Extend ModuleBase for game logic
+  4. Add configuration in `config/argument/`
+  5. Test with actual game screenshots
+  6. Follow the screenshot → analyze → act pattern
+  
+  Remember: ALAS automates a mobile game through image recognition. Always consider the visual interface and user experience when implementing features.

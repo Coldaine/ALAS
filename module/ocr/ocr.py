@@ -16,9 +16,59 @@ from module.base.error_handler import OCR_ERROR_COUNTER
 # OCR backend with PaddleOCR interface compatibility
 try:
     from paddleocr import PaddleOCR
-    # Initialize PaddleOCR with optimized settings for ALAS
-    OCR_MODEL = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=False)
-    logger.info('Using PaddleOCR backend for OCR functionality.')
+    # Check if we have the newer PaddleOCR 3.x with predict method
+    try:
+        # Try PaddleOCR 3.x initialization (no use_gpu parameter)
+        _test_ocr = PaddleOCR(lang='en')
+        has_predict = hasattr(_test_ocr, 'predict')
+    except:
+        # Fallback to PaddleOCR 2.x initialization
+        _test_ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False, use_gpu=False)
+        has_predict = False
+    
+    if has_predict:
+        # PaddleOCR 3.x with new API
+        OCR_MODEL = _test_ocr
+        
+        # Wrap the predict method to match the old ocr() interface
+        def ocr_wrapper(images, cls=True):
+            results = []
+            if not isinstance(images, list):
+                images = [images]
+            
+            for img in images:
+                # Use predict() for PaddleOCR 3.x
+                predict_results = OCR_MODEL.predict(img)
+                if predict_results and len(predict_results) > 0:
+                    # Convert new format to old format
+                    formatted_result = []
+                    res_dict = predict_results[0]
+                    texts = res_dict.get('rec_texts', [])
+                    scores = res_dict.get('rec_scores', [])
+                    polys = res_dict.get('rec_polys', [])
+                    
+                    # Match the old ocr() output format: list of [bbox, (text, score)]
+                    for i in range(len(texts)):
+                        if i < len(polys) and i < len(scores):
+                            bbox = polys[i].tolist() if hasattr(polys[i], 'tolist') else polys[i]
+                            formatted_result.append([bbox, (texts[i], scores[i])])
+                    
+                    results.append(formatted_result if formatted_result else None)
+                else:
+                    results.append(None)
+            
+            return results
+        
+        # Replace ocr method with wrapper
+        OCR_MODEL.ocr = ocr_wrapper
+        # Add close method for compatibility
+        if not hasattr(OCR_MODEL, 'close'):
+            OCR_MODEL.close = lambda: None
+        logger.info('Using PaddleOCR 3.x with compatibility wrapper.')
+    else:
+        # PaddleOCR 2.x - use original ocr() method
+        OCR_MODEL = _test_ocr
+        logger.info('Using PaddleOCR 2.x backend.')
 except ImportError:
     # Fallback: Create PaddleOCR-compatible wrapper around EasyOCR
     logger.info('PaddleOCR not available, creating EasyOCR compatibility wrapper.')
@@ -131,11 +181,16 @@ class Ocr:
             image (np.ndarray): Shape (height, width, channel)
 
         Returns:
-            np.ndarray: Shape (width, height)
+            np.ndarray: Shape (height, width) or (height, width, 3) for PaddleOCR
         """
         image = extract_letters(image, letter=self.letter, threshold=self.threshold)
-
-        return image.astype(np.uint8)
+        image = image.astype(np.uint8)
+        
+        # PaddleOCR expects RGB images, convert grayscale to RGB
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        
+        return image
 
     def after_process(self, result):
         """
@@ -268,7 +323,50 @@ class Digit(Ocr):
 
 
 class DigitCounter(Digit):
-    pass
+    """OCR class for counters like '3/6' that returns parsed values"""
+    
+    def ocr(self, image, direct_ocr=False):
+        """
+        Do OCR on a counter format like '3/6' and return parsed values.
+        
+        Returns:
+            For single button: tuple of (current, _, total)
+            For multiple buttons: list of tuples
+        """
+        result = super().ocr(image, direct_ocr=direct_ocr)
+        
+        # Handle single result
+        if isinstance(result, str):
+            return self._parse_counter(result)
+        
+        # Handle multiple results
+        if isinstance(result, list):
+            return [self._parse_counter(r) for r in result]
+        
+        # Fallback
+        return (0, 0, 0)
+    
+    def _parse_counter(self, text):
+        """
+        Parse counter text like '3/6' into (current, 0, total) format.
+        The middle value is always 0 for compatibility.
+        """
+        if not text or '/' not in text:
+            logger.warning(f"DigitCounter: Invalid format '{text}', expected 'X/Y'")
+            return (0, 0, 0)
+        
+        try:
+            parts = text.split('/')
+            if len(parts) == 2:
+                current = int(parts[0].strip())
+                total = int(parts[1].strip())
+                return (current, 0, total)
+            else:
+                logger.warning(f"DigitCounter: Unexpected format '{text}'")
+                return (0, 0, 0)
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"DigitCounter: Failed to parse '{text}': {e}")
+            return (0, 0, 0)
 
 
 class OcrYuv(Ocr):
@@ -282,6 +380,7 @@ class DigitYuv(Digit, OcrYuv):
 
 
 class DigitCounterYuv(DigitCounter, OcrYuv):
+    """YUV version of DigitCounter"""
     pass
 
 
