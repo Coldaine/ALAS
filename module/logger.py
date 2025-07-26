@@ -178,15 +178,19 @@ def _set_file_logger(name=pyw_name):
     logger.log_file = log_file
 
 
-def set_file_logger(name=pyw_name):
+def set_file_logger(name=pyw_name, clear_on_start=False):
     if "_" in name:
         name = name.split("_", 1)[0]
-    log_file = f"./log/{datetime.date.today()}_{name}.txt"
-    try:
-        file = open(log_file, mode="a", encoding="utf-8")
-    except FileNotFoundError:
-        os.mkdir("./log")
-        file = open(log_file, mode="a", encoding="utf-8")
+    
+    # Create unique log file for each session with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = f"./log/{datetime.date.today()}_{timestamp}_{name}.txt"
+    
+    # Create log directory if it doesn't exist
+    os.makedirs("./log", exist_ok=True)
+    
+    # Always use write mode for new session logs
+    file = open(log_file, mode="w", encoding="utf-8")
 
     file_console = Console(
         file=file,

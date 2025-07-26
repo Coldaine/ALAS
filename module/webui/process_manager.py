@@ -135,6 +135,7 @@ class ProcessManager:
         State.electron = args.electron
 
         # Setup logger
+        # Each session gets its own timestamped log file
         set_file_logger(name=config_name)
         if State.electron:
             # https://github.com/LmeSzinc/AzurLaneAutoScript/issues/2051

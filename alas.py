@@ -1,7 +1,9 @@
 import os
 import re
+import signal
 import threading
 import time
+import shutil
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
@@ -28,6 +30,48 @@ class AzurLaneAutoScript:
         # Failure count of tasks
         # Key: str, task name, value: int, failure count
         self.failure_record: Dict[str, int] = {}
+        
+        # Clean up old action archives on startup
+        self._cleanup_old_archives()
+    
+    def _cleanup_old_archives(self, days_to_keep: int = 7) -> None:
+        """Clean up action archive folders older than specified days"""
+        archive_path = "./log/action_archive"
+        
+        if not os.path.exists(archive_path):
+            return
+        
+        try:
+            cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+            cleaned_count = 0
+            
+            # Iterate through date folders
+            for folder_name in os.listdir(archive_path):
+                folder_path = os.path.join(archive_path, folder_name)
+                
+                # Skip if not a directory
+                if not os.path.isdir(folder_path):
+                    continue
+                
+                # Try to parse date from folder name (format: YYYY-MM-DD)
+                try:
+                    folder_date = datetime.strptime(folder_name, "%Y-%m-%d")
+                    
+                    # Remove if older than cutoff
+                    if folder_date < cutoff_date:
+                        shutil.rmtree(folder_path)
+                        cleaned_count += 1
+                        logger.info(f"Cleaned up old archive folder: {folder_name}")
+                        
+                except ValueError:
+                    # Skip folders that don't match date format
+                    continue
+            
+            if cleaned_count > 0:
+                logger.info(f"Cleaned up {cleaned_count} old archive folders (older than {days_to_keep} days)")
+                
+        except Exception as e:
+            logger.warning(f"Error during archive cleanup: {e}")
 
     @cached_property
     def config(self) -> AzurLaneConfig:
@@ -447,6 +491,28 @@ class AzurLaneAutoScript:
         from module.daemon.game_manager import GameManager
         GameManager(config=self.config, device=self.device, task="GameManager").run()
 
+    def graceful_shutdown(self):
+        """Perform graceful shutdown with resource cleanup"""
+        logger.hr('Graceful Shutdown', level=0)
+        try:
+            # Import here to avoid circular dependency
+            from module.base.resource import release_resources
+            
+            # Stop any running device operations
+            if hasattr(self, 'device'):
+                try:
+                    self.device.app_stop()
+                    self.device.release_during_wait()
+                except Exception as e:
+                    logger.warning(f"Error during device cleanup: {e}")
+            
+            # Release all resources (OCR models, etc.)
+            release_resources()
+            
+            logger.info("Resources released successfully")
+        except Exception as e:
+            logger.error(f"Error during graceful shutdown: {e}")
+    
     def wait_until(self, future):
         """
         Wait until a specific time.
@@ -535,6 +601,8 @@ class AzurLaneAutoScript:
         logger.info(f'Start scheduler loop: {self.config_name}')
 
         while 1:
+            if hasattr(self, 'pause_event') and self.pause_event:
+                self.pause_event.wait()
             # Check update event from GUI
             if self.stop_event is not None:
                 if self.stop_event.is_set():
@@ -603,5 +671,35 @@ class AzurLaneAutoScript:
 
 
 if __name__ == '__main__':
+    # Create stop event for graceful shutdown
+    stop_event = threading.Event()
+    
+    # Signal handler for graceful shutdown
+    def signal_handler(signum, frame):
+        logger.info("\n" + "=" * 60)
+        logger.info("Interrupt signal received (Ctrl+C)")
+        logger.info("Initiating graceful shutdown...")
+        logger.info("Please wait for cleanup to complete")
+        logger.info("=" * 60)
+        stop_event.set()
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    # SIGTERM might not be available on Windows
+    if hasattr(signal, 'SIGTERM'):
+        signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+    
+    # Create ALAS instance and assign stop event
     alas = AzurLaneAutoScript()
-    alas.loop()
+    alas.stop_event = stop_event
+    AzurLaneConfig.stop_event = stop_event
+    
+    # Run the main loop
+    try:
+        alas.loop()
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received")
+    finally:
+        # Perform cleanup
+        alas.graceful_shutdown()
+        logger.info("ALAS shutdown complete")

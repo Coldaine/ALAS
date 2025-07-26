@@ -37,6 +37,10 @@ class Control(Hermit, Minitouch, Scrcpy, MaaTouch, NemuIpc):
             self.handle_control_check(button)
         x, y = random_rectangle_point(button.button)
         x, y = ensure_int(x, y)
+        
+        # Archive screenshot before clicking
+        self.archive_action_screenshot(action_name="click", button_name=str(button))
+        
         logger.info(f"Click {point2str(x, y)} @ {button}")
         method = self.click_methods.get(self.config.Emulator_ControlMethod, self.click_adb)
         method(x, y)
@@ -63,6 +67,10 @@ class Control(Hermit, Minitouch, Scrcpy, MaaTouch, NemuIpc):
         x, y = random_rectangle_point(button.button)
         x, y = ensure_int(x, y)
         duration = ensure_time(duration)
+        
+        # Archive screenshot before long clicking
+        self.archive_action_screenshot(action_name="long_click", button_name=str(button))
+        
         logger.info(f"Click {point2str(x, y)} @ {button}, {duration}")
         method = self.config.Emulator_ControlMethod
         if method == "minitouch":
@@ -82,6 +90,10 @@ class Control(Hermit, Minitouch, Scrcpy, MaaTouch, NemuIpc):
         self.handle_control_check(name)
         p1, p2 = ensure_int(p1, p2)
         duration = ensure_time(duration)
+        
+        # Archive screenshot before swiping
+        self.archive_action_screenshot(action_name="swipe", button_name=name)
+        
         method = self.config.Emulator_ControlMethod
         if method == "uiautomator2":
             logger.info(f"Swipe {point2str(*p1)} -> {point2str(*p2)}, {duration}")
@@ -164,6 +176,10 @@ class Control(Hermit, Minitouch, Scrcpy, MaaTouch, NemuIpc):
     ):
         self.handle_control_check(name)
         p1, p2 = ensure_int(p1, p2)
+        
+        # Archive screenshot before dragging
+        self.archive_action_screenshot(action_name="drag", button_name=name)
+        
         logger.info(f"Drag {point2str(*p1)} -> {point2str(*p2)}")
         method = self.config.Emulator_ControlMethod
         if method == "minitouch":

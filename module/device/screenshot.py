@@ -1,5 +1,8 @@
 import os
 import time
+import threading
+import queue
+import re
 from collections import deque
 from datetime import datetime
 
@@ -28,6 +31,11 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
     _screenshot_interval = Timer(0.1)
     _last_save_time = {}
     image: np.ndarray
+    
+    # Async archiving
+    _archive_queue = None
+    _archive_thread = None
+    _archive_thread_started = False
 
     @cached_property
     def screenshot_methods(self):
@@ -124,6 +132,77 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
         length = max(1, min(length, 300))
         return deque(maxlen=length)
 
+    def _start_archive_thread(self):
+        """Start the background thread for async screenshot archiving"""
+        if not self._archive_thread_started:
+            self._archive_queue = queue.Queue()
+            self._archive_thread = threading.Thread(target=self._archive_worker, daemon=True)
+            self._archive_thread.start()
+            self._archive_thread_started = True
+            logger.info("Started screenshot archive background thread")
+    
+    def _archive_worker(self):
+        """Background thread that saves screenshots without blocking main thread"""
+        while True:
+            try:
+                data = self._archive_queue.get(timeout=1)
+                if data is None:  # Shutdown signal
+                    break
+                
+                image, file_path = data
+                save_image(image, file_path)
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.warning(f"Archive worker error: {e}")
+    
+    def archive_action_screenshot(self, action_name="unknown", button_name=""):
+        """
+        Archives the current screenshot before an action is taken.
+        This is useful for debugging and understanding the bot's behavior.
+        Saves to 'log/action_archive/<date>/<action_name>/<timestamp>_<button>.png'.
+        
+        Uses async I/O to avoid blocking the main thread.
+
+        Args:
+            action_name (str): Name of the action being taken, e.g. 'click', 'swipe'.
+            button_name (str): Name of the button or element being interacted with.
+        """
+        # Ensure we have an image to save
+        if not hasattr(self, 'image') or self.image is None:
+            return
+        
+        # Start archive thread if needed
+        if not self._archive_thread_started:
+            self._start_archive_thread()
+
+        now = time.time()
+        timestamp = datetime.fromtimestamp(now).strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        date_folder = datetime.fromtimestamp(now).strftime("%Y-%m-%d")
+        
+        # Robust filename sanitization - remove all invalid Windows filename characters
+        button_clean = re.sub(r'[<>:"|?*\\/]', '_', str(button_name))
+        button_clean = button_clean.replace(' ', '_')[:50]  # Limit length
+        
+        if button_clean:
+            file = f"{timestamp}_{button_clean}.png"
+        else:
+            file = f"{timestamp}.png"
+
+        try:
+            # Create folder structure
+            folder = os.path.join("./log/action_archive", date_folder, action_name)
+            os.makedirs(folder, exist_ok=True)
+            
+            file_path = os.path.join(folder, file)
+            
+            # Queue for async save - returns immediately
+            self._archive_queue.put((self.image.copy(), file_path))
+            
+        except Exception as e:
+            logger.warning(f"Failed to queue screenshot for archiving: {e}")
+
     def save_screenshot(self, genre="items", interval=None, to_base_folder=False):
         """Save a screenshot. Use millisecond timestamp as file name.
 
@@ -157,9 +236,7 @@ class Screenshot(Adb, WSA, DroidCast, AScreenCap, Scrcpy, NemuIpc, LDOpenGL):
             self.image_save(file)
             self._last_save_time[genre] = now
             return True
-        else:
-            self._last_save_time[genre] = now
-            return False
+        return False
 
     def screenshot_last_save_time_reset(self, genre):
         self._last_save_time[genre] = 0

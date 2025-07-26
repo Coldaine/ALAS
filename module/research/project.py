@@ -130,7 +130,25 @@ def get_research_name(image, ocr=OCR_RESEARCH):
     names = ocr.ocr(image)
     if not isinstance(names, list):
         names = [names]
-    return names
+    
+    # Handle LLM verbose responses
+    parsed_names = []
+    for name in names:
+        if isinstance(name, str):
+            # Extract project codes from verbose LLM responses
+            # Pattern matches research codes like D-780-MI, C-153-MI, etc.
+            import re
+            matches = re.findall(r'[A-Z]-\d{3}-[A-Z]{2}', name)
+            if matches:
+                # Use the first match found
+                parsed_names.append(matches[0])
+            else:
+                # If no pattern match, use original name
+                parsed_names.append(name)
+        else:
+            parsed_names.append(name)
+    
+    return parsed_names
 
 
 def get_research_finished(image):
