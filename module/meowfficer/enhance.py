@@ -22,9 +22,9 @@ MEOWFFICER_FEED = DigitCounter(OCR_MEOWFFICER_FEED, letter=(131, 121, 123), thre
 
 class MeowfficerLevelOcr(Digit):
     def __init__(
-        self, buttons, lang="azur_lane", letter=(255, 255, 255), threshold=128, alphabet="0123456789IDSLV", name=None
+        self, buttons, letter=(255, 255, 255), threshold=128, alphabet="0123456789IDSLV", name=None
     ):
-        super().__init__(buttons, lang=lang, letter=letter, threshold=threshold, alphabet=alphabet, name=name)
+        super().__init__(buttons, letter=letter, threshold=threshold, alphabet=alphabet, name=name)
 
     def after_process(self, result):
         result = result.replace("L", "").replace("V", "").replace(".", "")

@@ -1,6 +1,7 @@
 import time
 import os
 import json
+import re
 from datetime import timedelta, datetime
 from typing import TYPE_CHECKING
 
@@ -272,15 +273,45 @@ class Ocr:
         if not image_list:
             return []
 
+        # Check device connection first (cost protection)
+        device_connected = False
+        try:
+            from adbutils import AdbClient
+            client = AdbClient(host="127.0.0.1", port=5037)
+            devices = client.device_list()
+            device_connected = len(devices) > 0
+        except Exception as e:
+            logger.debug(f"Device connection check failed: {e}")
+            device_connected = False
+            
+        # Use vision OCR if device is connected and API is available
+        if device_connected:
+            try:
+                # Vision OCR needs the full screenshot, not cropped images
+                # Pass the original image (full screenshot) to vision OCR
+                return self._vision_ocr(image)
+            except Exception as e:
+                logger.warning(f"Vision OCR failed, falling back to traditional: {e}")
+                # Fall through to traditional OCR
+
         result_list = []
         try:
+            # For traditional OCR, we need to crop each button area from the full image
+            cropped_images = []
+            for button in self.buttons:
+                x1, y1, x2, y2 = button
+                cropped = image[y1:y2, x1:x2] if isinstance(image, np.ndarray) else image
+                cropped_images.append(cropped)
+            
             # Pre-process
             preprocessed_images = []
             if not direct_ocr:
-                for img in image_list:
+                for img in cropped_images:
                     preprocessed = self.pre_process(img)
                     preprocessed_images.append(preprocessed)
                 image_list = preprocessed_images
+            else:
+                image_list = cropped_images
 
             # PaddleOCR returns a list of results, one for each image.
             # Each result is a list of [box, (text, score)].
@@ -317,9 +348,212 @@ class Ocr:
         else:
             return result_list
 
+    def _vision_ocr(self, full_screenshot):
+        """Use Gemini vision to read text directly from full screenshot with button context"""
+        try:
+            import google.generativeai as genai
+            from config.vision_llm_config import GOOGLE_API_KEY, GEMINI_MODEL
+            from PIL import Image
+            import numpy as np
+            
+            if not GOOGLE_API_KEY:
+                logger.warning("No Google API key, falling back to OCR")
+                raise ImportError("No API key")
+                
+            genai.configure(api_key=GOOGLE_API_KEY)
+            model = genai.GenerativeModel(GEMINI_MODEL)
+            
+            # Convert full screenshot to PIL
+            if isinstance(full_screenshot, np.ndarray):
+                pil_screenshot = Image.fromarray(full_screenshot)
+            else:
+                pil_screenshot = full_screenshot
+            
+            results = []
+            buttons = self._buttons if isinstance(self._buttons, list) else [self._buttons]
+            
+            for idx, button in enumerate(buttons):
+                button_name = button.name if hasattr(button, 'name') else 'unknown'
+                button_area = button.area if hasattr(button, 'area') else button
+                
+                # Get appropriate prompt based on button name and area
+                prompt = self._get_vision_prompt_with_area(button_name, button_area, idx, len(buttons))
+                
+                try:
+                    # Check cache with button area as part of key
+                    cache_key = f"{button_name}_{button_area}_{hash(full_screenshot.tobytes() if isinstance(full_screenshot, np.ndarray) else id(full_screenshot))}"
+                    if hasattr(self, '_vision_cache') and cache_key in self._vision_cache:
+                        age = time.time() - self._vision_cache_time.get(cache_key, 0)
+                        if age < 30:  # 30 second cache
+                            results.append(self._vision_cache[cache_key])
+                            continue
+                    
+                    # Call Gemini with full screenshot
+                    response = model.generate_content([prompt, pil_screenshot])
+                    text = response.text.strip()
+                    
+                    # Cache result
+                    if not hasattr(self, '_vision_cache'):
+                        self._vision_cache = {}
+                        self._vision_cache_time = {}
+                    self._vision_cache[cache_key] = text
+                    self._vision_cache_time[cache_key] = time.time()
+                    
+                    results.append(text)
+                except Exception as e:
+                    logger.error(f"Vision OCR failed for {button_name}: {e}")
+                    results.append("")
+                    
+            return results[0] if len(results) == 1 else results
+            
+        except ImportError:
+            logger.warning("Google AI not available")
+            raise
+            
+    def _traditional_ocr(self, image_list):
+        """Fallback to traditional OCR"""
+        # Use the existing OCR logic from the main ocr method
+        result_list = []
+        try:
+            # Pre-process
+            preprocessed_images = []
+            for img in image_list:
+                preprocessed = self.pre_process(img)
+                preprocessed_images.append(preprocessed)
+
+            # PaddleOCR returns a list of results, one for each image.
+            # Each result is a list of [box, (text, score)].
+            results = OCR_MODEL.ocr(preprocessed_images, cls=True)
+            result_list = []
+            for result_per_image in results:
+                if result_per_image:
+                    # Concat all text found in one image
+                    text = ' '.join([line[1][0] for line in result_per_image])
+                    result_list.append(text)
+                else:
+                    # No text found
+                    result_list.append('')
+
+            # Post-process
+            result_list = [self.after_process(res) for res in result_list]
+
+        except Exception as e:
+            logger.exception(e)
+            # Return empty results matching the expected output shape
+            result_list = ['' for _ in image_list]
+
+        return result_list
+
+    def _get_vision_prompt(self, button_name):
+        """Get appropriate prompt based on button context"""
+        prompts = {
+            'COMMISSION_TIME': "Read the time from this Azur Lane commission timer. Return format: HH:MM:SS",
+            'RESEARCH_PROJECT': "Read the research project code. Format: X-NNN-XX",
+            'SHOP_PRICE': "Read the medal price shown. Return only the number.",
+            'FLEET_POWER': "Read the fleet power number. No commas.",
+            'DORM_FOOD': "Read the food counter. Format: CURRENT/MAXIMUM",
+            'OCR_DORM_FOOD': "Read the food amount number shown. Return only the number, no text.",
+            'SOS_CHAPTER': "Read the chapter number (3-10). Return only the number.",
+            'STAGE_NAME': "Read the stage name. Examples: 7-2, D3, SP3",
+        }
+        
+        # Check if button name contains any key
+        for key, prompt in prompts.items():
+            if key in button_name.upper():
+                return prompt
+                
+        # Default prompt
+        return "Read any text in this image from Azur Lane. Return only the text, no explanation."
+    
+    def _get_vision_prompt_with_area(self, button_name, button_area, idx=0, total=1):
+        """Get appropriate prompt based on OCR context"""
+        # Different prompts for different OCR use cases
+        if 'DORM_FOOD' in button_name:
+            # For dorm food, specify which food item (1-indexed for clarity)
+            position = idx + 1
+            return f"""Looking at this Azur Lane dorm feeding screen, there are {total} food items in a row.
+Read the amount number for food item #{position} (counting from left to right).
+Return ONLY the numeric value. Examples: 0, 5, 100, 1000, 5000
+If empty or no number visible, return: 0"""
+        
+        elif 'DORM_FILL' in button_name or 'OCR_FILL' in button_name:
+            return """Looking at this Azur Lane dorm screen, read the happiness/fill counter shown as CURRENT/MAXIMUM.
+Return in format: NUMBER/NUMBER
+Example: 119/119 or 50/150"""
+        
+        elif 'DORM_SLOT' in button_name or 'OCR_SLOT' in button_name:
+            return """Looking at this Azur Lane dorm screen, read the ship slot counter shown as CURRENT/MAXIMUM.
+Return in format: NUMBER/NUMBER
+Example: 2/6 or 5/6"""
+        
+        elif 'COMMISSION' in button_name or 'TIMER' in button_name:
+            return """Looking at this Azur Lane screen, read the timer displayed.
+Return in format: HH:MM:SS
+Example: 02:45:30 or 00:15:45"""
+        
+        elif 'RESEARCH' in button_name:
+            return """Looking at this Azur Lane research screen, read the research project code.
+Return the code exactly as shown.
+Example: Q-289-MI or S-486-MI"""
+        
+        elif 'PRICE' in button_name or 'COIN' in button_name:
+            return """Looking at this Azur Lane screen, read the price or coin amount.
+Return ONLY the number, no currency symbols.
+Example: 500 or 15000"""
+        
+        elif 'STAGE' in button_name:
+            return """Looking at this Azur Lane screen, read the stage name.
+Return the stage identifier.
+Examples: 7-2, D3, SP3, 13-4"""
+        
+        else:
+            # Generic prompt for other cases
+            return """Looking at this Azur Lane screen, read the text or number displayed.
+Return ONLY what you see, no explanations."""
+
 
 class Digit(Ocr):
-    pass
+    def ocr(self, image, direct_ocr=False):
+        """
+        Do OCR on a digit/number and return parsed integer values.
+        
+        Returns:
+            For single button: int
+            For multiple buttons: list[int]
+        """
+        result = super().ocr(image, direct_ocr=direct_ocr)
+        
+        # Handle single result
+        if isinstance(result, str):
+            return self._parse_digit(result)
+        
+        # Handle multiple results
+        if isinstance(result, list):
+            return [self._parse_digit(r) for r in result]
+        
+        # Fallback
+        return 0
+    
+    def _parse_digit(self, text):
+        """
+        Parse text into integer, handling common OCR errors.
+        """
+        if not text:
+            logger.warning(f"Digit: Empty text, returning 0")
+            return 0
+        
+        # Clean the text - keep only digits
+        cleaned = re.sub(r'[^0-9]', '', str(text))
+        
+        if not cleaned:
+            logger.warning(f"Digit: No digits found in '{text}', returning 0")
+            return 0
+        
+        try:
+            return int(cleaned)
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Digit: Failed to parse '{text}' -> '{cleaned}': {e}")
+            return 0
 
 
 class DigitCounter(Digit):
@@ -351,22 +585,26 @@ class DigitCounter(Digit):
         Parse counter text like '3/6' into (current, 0, total) format.
         The middle value is always 0 for compatibility.
         """
-        if not text or '/' not in text:
-            logger.warning(f"DigitCounter: Invalid format '{text}', expected 'X/Y'")
+        if not text:
+            logger.warning(f"DigitCounter: Empty text")
             return (0, 0, 0)
-        
-        try:
-            parts = text.split('/')
-            if len(parts) == 2:
-                current = int(parts[0].strip())
-                total = int(parts[1].strip())
+            
+        # First, try to find a pattern like "X/Y" anywhere in the text
+        import re
+        match = re.search(r'(\d+)\s*/\s*(\d+)', str(text))
+        if match:
+            try:
+                current = int(match.group(1))
+                total = int(match.group(2))
                 return (current, 0, total)
-            else:
-                logger.warning(f"DigitCounter: Unexpected format '{text}'")
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"DigitCounter: Failed to parse matched pattern from '{text}': {e}")
                 return (0, 0, 0)
-        except (ValueError, AttributeError) as e:
-            logger.warning(f"DigitCounter: Failed to parse '{text}': {e}")
-            return (0, 0, 0)
+        
+        # If no slash pattern found, log a shorter version of the text
+        text_preview = str(text)[:100] + '...' if len(str(text)) > 100 else str(text)
+        logger.warning(f"DigitCounter: No X/Y pattern found in '{text_preview}'")
+        return (0, 0, 0)
 
 
 class OcrYuv(Ocr):

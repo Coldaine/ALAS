@@ -396,7 +396,12 @@ class GuildLogistics(GuildBase):
             in: GUILD_LOGISTICS
             out: GUILD_LOGISTICS
         """
-        if not GUILD_EXCHANGE_LIMIT.ocr(self.device.image) > 0:
+        try:
+            exchange_limit = GUILD_EXCHANGE_LIMIT.ocr(self.device.image)
+            if not exchange_limit > 0:
+                return False
+        except (ValueError, TypeError):
+            logger.warning("Failed to parse guild exchange limit, assuming 0")
             return False
 
         items = self._guild_exchange_scan()

@@ -22,7 +22,7 @@ class LogRes:
             _mod = False
             original = deep_get(self.config.data, keys=_key_group)
             if isinstance(value, int):
-                if original["Value"] != value:
+                if original is None or original.get("Value") != value:
                     _key = _key_group + ".Value"
                     self.config.modified[_key] = value
                     _time = datetime.now().replace(microsecond=0)
@@ -30,7 +30,7 @@ class LogRes:
                     self.config.modified[_key_time] = _time
             elif isinstance(value, dict):
                 for value_name, _value in value.items():
-                    if _value == original[value_name]:
+                    if original is not None and value_name in original and _value == original[value_name]:
                         continue
                     _key = _key_group + f".{value_name}"
                     self.config.modified[_key] = _value
