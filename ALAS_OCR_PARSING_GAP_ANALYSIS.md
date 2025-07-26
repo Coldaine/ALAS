@@ -22,7 +22,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: The parser strictly expects a time string in the format: `HH:MM:SS`. For example, `08:30:00`.
 
-- **C. Workflow**: The `commission_parse()` method captures a screenshot of the commission list, and the Duration OCR parser expects the time to be formatted as `HH:MM:SS` with colons as separators.
+- **C. LLM Parsing Prompt**: 
+```
+You are parsing a commission duration from the Azur Lane game interface.
+
+Input: Raw OCR text representing time remaining for a naval commission.
+Common OCR errors: 'I' misread as '1', 'O' as '0', 'S' as '5', 'B' as '8', colons may appear as dots, semicolons, or spaces.
+
+Required output format: HH:MM:SS (24-hour format with leading zeros)
+- HH: 00-23 (hours)
+- MM: 00-59 (minutes)  
+- SS: 00-59 (seconds)
+
+Validation rules:
+- Commissions range from 0:15:00 to 12:00:00
+- No commission exceeds 24 hours
+- If ambiguous, prefer shorter durations
+
+Examples:
+"8:3O:OO" → "08:30:00"
+"I2.45.30" → "12:45:30"
+"2 15 00" → "02:15:00"
+
+Return ONLY the formatted time string.
+```
 
 ---
 
@@ -32,7 +55,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: A string in the format `XXXX/YYYY` where X and Y are integers. For example, `1000/5800`.
 
-- **C. Workflow**: The `dorm_feed_scan()` function analyzes the dorm food interface, and the DigitCounter parser expects a forward slash separating current from total food supplies.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a food counter from the Azur Lane dorm interface.
+
+Input: Raw OCR text showing current food amount and maximum capacity.
+Common OCR errors: Slash may be '|', '\', or missing entirely. Numbers may be concatenated without separator.
+
+Required output format: CURRENT/MAXIMUM (no spaces, no commas)
+- CURRENT: Integer 0-99999
+- MAXIMUM: Integer typically 5000-90000 in increments of 1000
+
+Validation rules:
+- Current cannot exceed maximum
+- Maximum is usually a round number (5000, 10000, 20000, etc.)
+- If numbers are concatenated, split at logical boundary
+
+Examples:
+"1000/5800" → "1000/5800"
+"10005800" → "1000/5800" 
+"1500 | 20000" → "1500/20000"
+"3250\40000" → "3250/40000"
+
+Return ONLY the formatted counter string.
+```
 
 ---
 
@@ -42,7 +88,32 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Research codes in format `X-NNN-XX` where X is letters and N is numbers. For example, `D-057-UL`.
 
-- **C. Workflow**: The `research_select()` method captures the research selection screen, and the OCR parser expects project codes with single dashes between segments.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a research project code from the Azur Lane research lab.
+
+Input: Raw OCR text of a research project identifier.
+Common OCR errors: Dashes may be doubled '--', em-dash '–', or missing. Letters/numbers may be misread.
+
+Required output format: X-NNN-XX
+- First segment: 1-2 uppercase letters (common: D, G, H, Q, C, E)
+- Middle segment: 3-digit number with leading zeros
+- Last segment: 2 uppercase letters (common: UL, UR, MI, FP, DR, RF)
+
+Validation rules:
+- Always use single hyphen '-' as separator
+- Middle segment must be exactly 3 digits
+- Known prefixes: D, G, H, Q, C, E
+- Known suffixes: UL, UR, MI, FP, DR, RF
+
+Examples:
+"D--057--UL" → "D-057-UL"
+"G031DR" → "G-031-DR"
+"H 142 RF" → "H-142-RF"
+"Q004Ml" → "Q-004-MI"
+
+Return ONLY the formatted project code.
+```
 
 ---
 
@@ -52,7 +123,35 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Stage names like `N-N` for normal stages or `XN` for special stages. Examples: `7-2`, `SP3`, `D3`.
 
-- **C. Workflow**: The `get_chapter_index()` method scans the campaign selection screen, and the parser expects specific formats with hyphens or alphanumeric combinations.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a stage name from the Azur Lane campaign map.
+
+Input: Raw OCR text of a stage identifier.
+Common OCR errors: Dashes may be doubled, em-dash, or spaces. Letters may be lowercase.
+
+Required output format varies by stage type:
+- Normal stages: N-N (chapter-stage, like "7-2", "13-4")
+- Hard mode: XN (letter + number, like "D3", "C2")
+- Special stages: SPN (like "SP3")
+- Event stages: XN or N-N format
+
+Validation rules:
+- Normal chapters: 1-14
+- Normal stages per chapter: 1-4
+- Hard mode uses A, B, C, D (not E+)
+- SP stages: SP, SP1, SP2, SP3
+- Always use hyphen for normal stages
+- No hyphen for letter+number format
+
+Examples:
+"7--2" → "7-2"
+"sp3" → "SP3"
+"D 3" → "D3"
+"13—4" → "13-4"
+
+Return ONLY the formatted stage name.
+```
 
 ---
 
@@ -62,7 +161,31 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: A clean integer string without commas or formatting. For example, `100`, `2000`.
 
-- **C. Workflow**: The `_get_medals()` function scans shop item prices, and the Digit parser expects pure numeric strings that can be cast to integers.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a price from the Azur Lane medal shop.
+
+Input: Raw OCR text of an item price in medals.
+Common OCR errors: Commas in numbers, decimal points, 'O' as '0', partial digits.
+
+Required output format: Pure integer (no commas, no decimals)
+- Range: 20 to 20000
+
+Validation rules:
+- Common prices: 80, 100, 150, 200, 500, 1000, 1500, 2000, 5000, 10000, 15000
+- "00" often means "100" (known OCR bug)
+- Prices are always whole numbers
+- No price below 20 or above 20000
+
+Examples:
+"1,500" → "1500"
+"00" → "100"
+"2.000" → "2000"
+"I00" → "100"
+"5O0" → "500"
+
+Return ONLY the integer price as a string.
+```
 
 ---
 
@@ -72,7 +195,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: A pure integer string with no thousand separators. For example, `14848`.
 
-- **C. Workflow**: The `get_power()` method analyzes the exercise opponent selection screen, and the Digit parser needs comma-free integer strings representing fleet power.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a fleet power value from the Azur Lane exercise opponent screen.
+
+Input: Raw OCR text of a fleet's total power rating.
+Common OCR errors: Commas as thousand separators, spaces, 'O' as '0', 'I' as '1'.
+
+Required output format: Pure integer (no commas, no spaces)
+- Range: 1000 to 20000 typically
+
+Validation rules:
+- Fleet power is always 4-5 digits
+- Typical range: 8000-15000
+- Never below 1000 or above 20000
+- Always a whole number
+
+Examples:
+"14,848" → "14848"
+"13 477" → "13477"
+"I2750" → "12750"
+"9.521" → "9521"
+
+Return ONLY the integer power value as a string.
+```
 
 ---
 
@@ -82,7 +228,31 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Progress in `XX/YY` format where both are integers. For example, `75/100`.
 
-- **C. Workflow**: The guild operations screen displays member contribution progress, and the DigitCounter expects a forward slash between current and maximum values.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing guild operation progress from the Azur Lane guild screen.
+
+Input: Raw OCR text showing current progress vs maximum.
+Common OCR errors: Slash may be '|', '\', '1', or have spaces. Numbers may be misread.
+
+Required output format: CURRENT/MAXIMUM (no spaces)
+- CURRENT: Integer 0-999
+- MAXIMUM: Integer, typically 60, 80, 100, 120, 150, 200
+
+Validation rules:
+- Current cannot exceed maximum
+- Maximum values are fixed mission targets
+- Common maximums: 60, 80, 100, 120, 150, 200
+- Current is always less than or equal to maximum
+
+Examples:
+"75/100" → "75/100"
+"45 | 60" → "45/60"
+"120\150" → "120/150"
+"80 1 100" → "80/100"
+
+Return ONLY the formatted progress string.
+```
 
 ---
 
@@ -92,7 +262,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: A single or double-digit integer. For example, `3`, `10`.
 
-- **C. Workflow**: The `_sos_signal_select()` method scans available SOS signals, and the Digit parser expects clean numeric chapter identifiers.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing an SOS chapter number from the Azur Lane SOS signal list.
+
+Input: Raw OCR text of a chapter number.
+Common OCR errors: 'I' as '1', 'O' as '0', 'S' as '5', partial visibility.
+
+Required output format: Integer 3-10 (as string)
+- Range: 3 to 10 only
+
+Validation rules:
+- SOS chapters only exist for chapters 3-10
+- No SOS for chapters 1, 2, 11+
+- Single digit (3-9) or exactly 10
+- If unclear between valid options, prefer lower chapter
+
+Examples:
+"S" → "5"
+"I0" → "10"
+"B" → "8"
+"3" → "3"
+
+Return ONLY the chapter number as a string.
+```
 
 ---
 
@@ -102,7 +295,31 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Format `X/Y` where X is current attempts and Y is maximum. For example, `3/3`.
 
-- **C. Workflow**: The raid interface shows remaining attempts, and the DigitCounter needs to detect the slash separator with specific color thresholds.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing raid attempt counter from the Azur Lane raid interface.
+
+Input: Raw OCR text showing remaining attempts vs maximum.
+Common OCR errors: Slash variations, color-affected misreads.
+
+Required output format: CURRENT/MAXIMUM
+- CURRENT: Integer 0-3
+- MAXIMUM: Always 3 for raids
+
+Validation rules:
+- Maximum is always 3 for raid attempts
+- Current ranges from 0 to 3
+- Current cannot exceed maximum
+- Format is always X/3
+
+Examples:
+"3/3" → "3/3"
+"1|3" → "1/3"
+"0 / 3" → "0/3"
+"2\\3" → "2/3"
+
+Return ONLY the formatted counter string.
+```
 
 ---
 
@@ -112,7 +329,32 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Time in `HH:MM:SS` format. For example, `23:45:30`.
 
-- **C. Workflow**: The research lab screen shows time until completion, and the Duration OCR expects colon-separated time values.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing time remaining for active research in Azur Lane.
+
+Input: Raw OCR text of time remaining.
+Common OCR errors: Colons as dots/semicolons, may include "d" for days, "h" for hours.
+
+Required output format: HH:MM:SS (even if days present)
+- Convert any day values to hours
+- HH: 00-99 (can exceed 24 for multi-day research)
+- MM: 00-59
+- SS: 00-59
+
+Validation rules:
+- Research can take 0:30:00 to 48:00:00
+- If days present, convert to hours (1d = 24h)
+- Common durations: 0:30, 1:00, 1:30, 2:00, 2:30, 3:00, 4:00, 5:00, 6:00, 8:00, 12:00
+
+Examples:
+"23:45:30" → "23:45:30"
+"1d 2h" → "26:00:00"
+"5.30.00" → "05:30:00"
+"12;00;00" → "12:00:00"
+
+Return ONLY the formatted time string.
+```
 
 ---
 
@@ -122,7 +364,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Clean enemy name string after removing characters `-一个―~(`. For example, `中型主力舰队`.
 
-- **C. Workflow**: The battle preparation screen shows enemy fleet type, and the OCR needs to correctly identify Chinese/Japanese text after character filtering.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing an enemy fleet name from the Azur Lane battle status screen.
+
+Input: Raw OCR text of enemy fleet type (may be in Chinese/Japanese).
+Common OCR errors: Partial character recognition, extra symbols.
+
+Required output: Clean fleet name with specific characters removed
+Remove these characters: - 一 个 ― ~ (
+
+Common fleet types:
+- 小型偵察艦隊 (small reconnaissance fleet)
+- 中型主力舰队 (medium main fleet)
+- 大型主力艦隊 (large main fleet)
+- 精锐舰队 (elite fleet)
+- 輸送艦隊 (transport fleet)
+
+Examples:
+"中型-主力舰队" → "中型主力舰队"
+"~小型偵察艦隊" → "小型偵察艦隊"
+"精锐舰队一个" → "精锐舰队"
+
+Return ONLY the cleaned fleet name.
+```
 
 ---
 
@@ -132,7 +397,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Pure integer string. For example, `500`, `1200`.
 
-- **C. Workflow**: The furniture shop displays prices, and the Digit OCR expects clean numeric values without any formatting.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing furniture price from the Azur Lane dorm shop.
+
+Input: Raw OCR text of furniture cost in coins.
+Common OCR errors: Currency symbols, commas, decimals, partial digits.
+
+Required output format: Pure integer (no symbols or formatting)
+- Range: 20 to 5000 typically
+
+Validation rules:
+- Common prices: 40, 80, 100, 150, 200, 300, 500, 700, 1000, 1200, 1500
+- Always whole numbers
+- No furniture costs more than 5000
+- Minimum price is 20
+
+Examples:
+"$500" → "500"
+"1,200" → "1200"
+"I50" → "150"
+"3OO" → "300"
+
+Return ONLY the integer price as a string.
+```
 
 ---
 
@@ -142,7 +430,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Integer score value. For example, `12500`.
 
-- **C. Workflow**: The New Year event battle results show scores, and the Digit parser needs pure numeric strings.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a score from the Azur Lane New Year minigame.
+
+Input: Raw OCR text of battle score.
+Common OCR errors: Commas, special effects obscuring digits, decimals.
+
+Required output format: Pure integer (no formatting)
+- Range: 0 to 99999
+
+Validation rules:
+- Scores are always whole numbers
+- Typical range: 5000-30000
+- High scores may reach 50000+
+- No decimals in scores
+
+Examples:
+"12,500" → "12500"
+"25.000" → "25000"
+"I8750" → "18750"
+"7,5OO" → "7500"
+
+Return ONLY the integer score as a string.
+```
 
 ---
 
@@ -152,7 +463,31 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Format `current/max` like `3/5`.
 
-- **C. Workflow**: The data key interface shows available keys, and the DigitCounter expects a slash-separated pair of values.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing data key counter from the Azur Lane interface.
+
+Input: Raw OCR text showing available data keys.
+Common OCR errors: Missing maximum, slash variations, single number only.
+
+Required output format: CURRENT/MAXIMUM
+- CURRENT: Integer 0-5
+- MAXIMUM: Always 5
+
+Validation rules:
+- Maximum is always 5 for data keys
+- Current ranges from 0 to 5
+- If only one number visible, assume it's current with max 5
+- Format must include slash
+
+Examples:
+"3/5" → "3/5"
+"2" → "2/5"
+"0|5" → "0/5"
+"4 / 5" → "4/5"
+
+Return ONLY the formatted counter string.
+```
 
 ---
 
@@ -162,7 +497,30 @@ This document serves as a specification for implementing an LLM-based bridge sys
 
 - **B. Exact Expected Format**: Integer level values like `100`, `120`.
 
-- **C. Workflow**: The awakening interface requires level detection to determine if ships can be awakened, but lacks robust OCR implementation.
+- **C. LLM Parsing Prompt**:
+```
+You are parsing a ship level from the Azur Lane awakening interface.
+
+Input: Raw OCR text of ship level.
+Common OCR errors: 'I' as '1', 'O' as '0', 'l' as '1'.
+
+Required output format: Integer level (as string)
+- Range: 1 to 125
+
+Validation rules:
+- Maximum level is 125
+- Awakening available at levels: 10, 30, 70, 100
+- Common levels: 70, 80, 90, 100, 105, 110, 115, 120, 125
+- Levels above 100 require awakening
+
+Examples:
+"I00" → "100"
+"12O" → "120"
+"ll0" → "110"
+"7O" → "70"
+
+Return ONLY the level as a string.
+```
 
 ---
 
