@@ -70,8 +70,24 @@ The codebase follows a modular architecture where each game feature is implement
 
 ## OCR System
 
-✅ **WORKING**: OCR system fully functional with PaddleOCR-compatible interface.
+✅ **WORKING**: OCR system fully functional with dual-mode operation.
 
+### Vision OCR (Default)
+ALAS now uses direct LLM vision for text reading when a device is connected:
+
+```python
+# Vision OCR is automatic when:
+# 1. GOOGLE_API_KEY is set as environment variable
+# 2. Android device is connected (cost protection)
+# 3. Google generativeai package is installed: pip install google-generativeai
+
+# The system automatically falls back to traditional OCR if:
+# - No device connected
+# - No API key available  
+# - Vision API fails
+```
+
+### Traditional OCR (Fallback)
 The OCR system supports multiple backends with automatic fallback:
 
 ```python
